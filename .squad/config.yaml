@@ -1,0 +1,14 @@
+version: 1
+project:
+  name: ticket-mangment
+  primaryLanguage: typescript
+  projectRoots:
+    - .
+tracker:
+  type: jira
+  workspace: notes-mangment.atlassian.net
+naming:
+  includeTrackerId: true
+  globalSequence: true
+agents:
+  - claude-code

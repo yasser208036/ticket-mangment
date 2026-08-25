@@ -1,0 +1,1007 @@
+{
+  "projectKey": "TM",
+  "meta": {
+    "product": "Ticket Management System",
+    "stack": "Laravel 13 (PHP 8.3+) · MySQL 8 · Vue 3 + TypeScript + Vite + Pinia",
+    "roles": "Admin, Agent (requesters are contact records, not logins)",
+    "sprintLength": "2 weeks",
+    "note": "Single source of truth for the Jira backlog. Edit here, re-run upload.mjs."
+  },
+  "epics": [
+    {
+      "id": "E1",
+      "summary": "Foundation & Environment",
+      "goal": "Stand up the monorepo, the Laravel 13 API, the Vue 3 SPA and a one-command local environment so every later epic has somewhere to land.",
+      "labels": ["devops"],
+      "stories": [
+        {
+          "id": "E1-S1",
+          "summary": "Scaffold the monorepo skeleton",
+          "role": "developer",
+          "want": "a monorepo with backend/, frontend/, docs/ and tools/ plus a root README and .gitignore",
+          "soThat": "the whole team works from one predictable layout",
+          "acceptanceCriteria": [
+            "Repository initialised with git and a root .gitignore covering vendor/, node_modules/, .env, .jira.env and build output",
+            "Root README documents the layout, prerequisites and how to start the stack",
+            "docs/ contains a placeholder for the ERD, API contract and deployment runbook",
+            "tools/jira/.jira.env is git-ignored and never committed"
+          ],
+          "labels": ["devops", "docs"],
+          "points": 2,
+          "sprint": 1
+        },
+        {
+          "id": "E1-S2",
+          "summary": "Install and configure the Laravel 13 API",
+          "role": "developer",
+          "want": "Laravel 13 installed in backend/ with MySQL 8 configured and a health endpoint",
+          "soThat": "I can prove the PHP and database layers talk to each other before building features",
+          "acceptanceCriteria": [
+            "Laravel 13 installed via composer, running on PHP 8.3+",
+            "backend/.env.example documents every variable the app needs, with no real secrets",
+            "Database connection points at MySQL 8 and php artisan migrate runs clean",
+            "GET /api/v1/health returns 200 with app version and database connectivity status",
+            "API routes are versioned under /api/v1 from the very first route"
+          ],
+          "labels": ["backend", "devops"],
+          "points": 3,
+          "sprint": 1
+        },
+        {
+          "id": "E1-S3",
+          "summary": "Scaffold the Vue 3 SPA with an API client",
+          "role": "developer",
+          "want": "a Vue 3 + TypeScript + Vite SPA with Vue Router, Pinia and a configured axios client",
+          "soThat": "the frontend can call the API with auth headers from day one",
+          "acceptanceCriteria": [
+            "frontend/ scaffolded with Vue 3, TypeScript, Vite, Vue Router and Pinia",
+            "src/api/client.ts exposes an axios instance reading the base URL from an env variable",
+            "A request interceptor attaches the bearer token and a response interceptor redirects to login on 401",
+            "The SPA successfully calls /api/v1/health and renders the result",
+            "Vite dev server proxies API calls so there are no CORS issues in development"
+          ],
+          "labels": ["frontend"],
+          "points": 3,
+          "sprint": 1
+        },
+        {
+          "id": "E1-S4",
+          "summary": "One-command local environment with Docker Compose",
+          "role": "developer",
+          "want": "docker-compose.yml providing MySQL 8 and Mailpit",
+          "soThat": "any machine can run the stack without installing database or mail servers locally",
+          "acceptanceCriteria": [
+            "docker compose up -d starts MySQL 8 and Mailpit with healthchecks",
+            "MySQL data persists in a named volume across restarts",
+            "Mailpit UI is reachable and Laravel mail config points at it in development",
+            "Ports and credentials come from environment variables with documented defaults",
+            "README documents the full start, stop and reset sequence"
+          ],
+          "labels": ["devops"],
+          "points": 3,
+          "sprint": 1
+        },
+        {
+          "id": "E1-S5",
+          "summary": "Code quality tooling and CI pipeline",
+          "role": "developer",
+          "want": "Pint, ESLint, Prettier and a CI workflow that runs linters and tests on every push",
+          "soThat": "style drift and broken code are caught before review, not during it",
+          "acceptanceCriteria": [
+            "php artisan pint --test passes on the backend",
+            "npm run lint and npm run format:check pass on the frontend",
+            "GitHub Actions workflow runs backend tests, frontend tests and both linters",
+            "CI spins up a MySQL 8 service so backend feature tests run against a real database",
+            "The workflow fails the build on any linter or test failure"
+          ],
+          "labels": ["devops", "testing"],
+          "points": 3,
+          "sprint": 1
+        }
+      ]
+    },
+    {
+      "id": "E2",
+      "summary": "Authentication & Agent Management",
+      "goal": "Token-based authentication with two roles (admin, agent), admin-managed agent accounts, and authorization enforced by policies on both the API and the SPA.",
+      "labels": ["backend", "frontend"],
+      "stories": [
+        {
+          "id": "E2-S1",
+          "summary": "Users table with role enum and a seeded admin",
+          "role": "developer",
+          "want": "the users migration with a role enum plus a seeder creating the first admin",
+          "soThat": "a fresh install can be logged into immediately",
+          "acceptanceCriteria": [
+            "users table has name, email (unique), password, role enum('admin','agent'), is_active and timestamps",
+            "A PHP 8.3 backed enum UserRole is the single definition of the role values",
+            "Seeder creates one admin whose credentials come from environment variables, not hardcoded",
+            "The seeder is idempotent and safe to run twice"
+          ],
+          "labels": ["backend", "database"],
+          "points": 2,
+          "sprint": 1
+        },
+        {
+          "id": "E2-S2",
+          "summary": "Log in and receive an API token",
+          "role": "user",
+          "want": "to log in with my email and password and receive a Sanctum token",
+          "soThat": "I can access the protected parts of the system",
+          "acceptanceCriteria": [
+            "POST /api/v1/auth/login validates credentials and returns a token plus the user object",
+            "Invalid credentials return 422 with a generic message that does not reveal whether the email exists",
+            "A deactivated user (is_active = false) cannot log in even with a correct password",
+            "The login route is rate limited to a small number of attempts per minute per IP",
+            "Passwords are hashed with bcrypt and never appear in any API response"
+          ],
+          "labels": ["backend"],
+          "points": 3,
+          "sprint": 1
+        },
+        {
+          "id": "E2-S3",
+          "summary": "Log out and revoke the token",
+          "role": "user",
+          "want": "to log out and have my token deleted server side",
+          "soThat": "a stolen token cannot be reused after I leave",
+          "acceptanceCriteria": [
+            "POST /api/v1/auth/logout deletes the current access token and returns 204",
+            "Reusing the revoked token afterwards returns 401",
+            "GET /api/v1/auth/me returns the authenticated user for a valid token"
+          ],
+          "labels": ["backend"],
+          "points": 1,
+          "sprint": 1
+        },
+        {
+          "id": "E2-S4",
+          "summary": "SPA session persistence and route guards",
+          "role": "user",
+          "want": "the SPA to remember my session, guard private routes and bounce me to login when my token expires",
+          "soThat": "I am never stranded on a broken screen",
+          "acceptanceCriteria": [
+            "A Pinia auth store holds the token and user and rehydrates on page reload",
+            "Router guard redirects unauthenticated users to /login and preserves the intended destination",
+            "Admin-only routes are blocked for agents with a clear not-authorised screen",
+            "A 401 from any request clears the store and redirects to login exactly once, without a redirect loop",
+            "Logging out clears the persisted token from storage"
+          ],
+          "labels": ["frontend"],
+          "points": 3,
+          "sprint": 1
+        },
+        {
+          "id": "E2-S5",
+          "summary": "Admin manages agent accounts",
+          "role": "admin",
+          "want": "to create, edit and deactivate agent accounts from a Users screen",
+          "soThat": "I control exactly who can access the system",
+          "acceptanceCriteria": [
+            "Users list shows name, email, role, active state and ticket count, paginated and searchable",
+            "Admin can create a user, choosing the admin or agent role, with validation on a unique email",
+            "Admin can edit a user's name, email and role, and toggle is_active",
+            "Deactivating rather than deleting is the default, so ticket history keeps a valid author",
+            "An admin cannot deactivate or demote their own account, preventing lockout"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 5,
+          "sprint": 1
+        },
+        {
+          "id": "E2-S6",
+          "summary": "Role-based authorization via policies",
+          "role": "admin",
+          "want": "authorization enforced by Laravel policies on every endpoint",
+          "soThat": "an agent cannot reach admin functionality by calling the API directly",
+          "acceptanceCriteria": [
+            "UserPolicy, CategoryPolicy and TicketPolicy define who may view, create, update and delete",
+            "Every controller action authorizes before acting; no endpoint relies on the UI hiding a button",
+            "An agent calling an admin-only endpoint receives 403, verified by a feature test per endpoint",
+            "Policy logic reads the UserRole enum rather than comparing raw strings"
+          ],
+          "labels": ["backend", "testing"],
+          "points": 3,
+          "sprint": 1
+        },
+        {
+          "id": "E2-S7",
+          "summary": "Change my own password",
+          "role": "user",
+          "want": "to change my password by confirming the current one",
+          "soThat": "I can rotate my credentials without asking an admin",
+          "acceptanceCriteria": [
+            "PATCH /api/v1/auth/password requires the current password and a confirmed new password",
+            "New password is validated against a minimum strength rule",
+            "All other tokens for that user are revoked after a successful change",
+            "A wrong current password returns 422 without changing anything"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 2,
+          "sprint": 1
+        }
+      ]
+    },
+    {
+      "id": "E3",
+      "summary": "Categories, Priorities & Statuses",
+      "goal": "Admin-managed master data that classifies every ticket, with statuses held in a table rather than an enum so the workflow stays configurable.",
+      "labels": ["backend", "frontend", "database"],
+      "stories": [
+        {
+          "id": "E3-S1",
+          "summary": "Master data migrations and seeders",
+          "role": "developer",
+          "want": "categories, priorities and statuses tables seeded with sensible defaults",
+          "soThat": "tickets can be classified the moment the app is installed",
+          "acceptanceCriteria": [
+            "categories table has name, slug, description, color, is_active, sort_order, timestamps and soft deletes",
+            "priorities table has name, slug, level, color and is_default, seeded with Low, Medium, High and Urgent",
+            "statuses table has name, slug, bucket, color, is_default, is_terminal and sort_order, seeded with New, Open, In Progress, Pending, Resolved, Closed and Reopened",
+            "Exactly one priority and one status are marked is_default",
+            "Seeders are idempotent and keyed on slug so re-running does not duplicate rows"
+          ],
+          "labels": ["backend", "database"],
+          "points": 3,
+          "sprint": 2
+        },
+        {
+          "id": "E3-S2",
+          "summary": "Admin CRUD for categories",
+          "role": "admin",
+          "want": "to create, edit, reorder and deactivate ticket categories",
+          "soThat": "classification matches how our support team actually works",
+          "acceptanceCriteria": [
+            "Full CRUD available at /api/v1/categories, restricted to admins for writes and open to agents for reads",
+            "Slug is generated from the name and is unique; name is required and unique",
+            "Colour is validated as a hex value and used consistently by the UI badges",
+            "Categories screen supports inline activate and deactivate plus drag-free sort_order editing",
+            "Deactivated categories disappear from the new-ticket dropdown but remain on existing tickets"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 5,
+          "sprint": 2
+        },
+        {
+          "id": "E3-S3",
+          "summary": "Protect referential integrity on category delete",
+          "role": "admin",
+          "want": "deleting a category that still has tickets to be blocked or to require reassignment",
+          "soThat": "no ticket is ever orphaned and history stays readable",
+          "acceptanceCriteria": [
+            "Deleting a category with tickets returns 422 explaining how many tickets block it",
+            "The response offers reassignment to another category, which moves the tickets and then deletes",
+            "Reassignment is wrapped in a transaction and logs an activity row on every affected ticket",
+            "A category with no tickets deletes cleanly as a soft delete"
+          ],
+          "labels": ["backend"],
+          "points": 2,
+          "sprint": 2
+        },
+        {
+          "id": "E3-S4",
+          "summary": "Cache master data in a Pinia store",
+          "role": "agent",
+          "want": "categories, priorities and statuses fetched once and shared across the app",
+          "soThat": "dropdowns and badges render instantly without repeated requests",
+          "acceptanceCriteria": [
+            "A masterData Pinia store loads all three lists on first authenticated page load",
+            "Every dropdown and badge in the app reads from this store, never from its own request",
+            "The store exposes lookup helpers so a component can resolve an id to a name and colour",
+            "Mutating master data in the admin screens refreshes the store without a page reload"
+          ],
+          "labels": ["frontend"],
+          "points": 2,
+          "sprint": 2
+        }
+      ]
+    },
+    {
+      "id": "E4",
+      "summary": "Ticket Creation & Tracking",
+      "goal": "The core of the product: create tickets against a requester contact, then find, filter, search and read them efficiently.",
+      "labels": ["backend", "frontend", "database"],
+      "stories": [
+        {
+          "id": "E4-S1",
+          "summary": "Tickets and requesters schema with a readable reference",
+          "role": "developer",
+          "want": "the tickets and requesters migrations with proper indexes and a unique human-readable reference",
+          "soThat": "tickets can be cited by number in email and conversation, and queries stay fast",
+          "acceptanceCriteria": [
+            "requesters table stores name, email (unique), phone and company as contact records with no login capability",
+            "tickets table carries reference, subject, description, requester_id, category_id, priority_id, status_id, assigned_to (nullable), created_by, the escalation columns and the resolved/closed timestamps",
+            "reference is unique and formatted TKT-YYYY-NNNNNN, generated inside a transaction so concurrent creates cannot collide",
+            "Indexes exist on status_id, category_id, priority_id, created_at and the composite (assigned_to, status_id)",
+            "A MySQL 8 FULLTEXT index covers subject and description",
+            "All foreign keys are constrained and tickets use soft deletes"
+          ],
+          "labels": ["backend", "database"],
+          "points": 5,
+          "sprint": 2
+        },
+        {
+          "id": "E4-S2",
+          "summary": "Create a ticket",
+          "role": "agent",
+          "want": "to create a ticket capturing the requester, subject, description, category and priority",
+          "soThat": "an incoming request is recorded and can be worked",
+          "acceptanceCriteria": [
+            "POST /api/v1/tickets validates every field through a FormRequest and returns the created ticket resource",
+            "An existing requester is matched by email, otherwise a new requester contact is created in the same transaction",
+            "Status defaults to the is_default status and priority to the is_default priority when not supplied",
+            "created_by is taken from the authenticated user and can never be set from the request body",
+            "A created activity row is written for every new ticket",
+            "The create form validates client side, disables submit while in flight and cannot double-submit"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 5,
+          "sprint": 2
+        },
+        {
+          "id": "E4-S3",
+          "summary": "Paginated ticket list",
+          "role": "agent",
+          "want": "a paginated list of tickets showing the fields I triage on",
+          "soThat": "I can see the whole queue without scrolling forever",
+          "acceptanceCriteria": [
+            "GET /api/v1/tickets returns a paginated resource collection with reference, subject, requester, category, priority, status, assignee and age",
+            "Related models are eager loaded so the endpoint issues a constant number of queries regardless of page size",
+            "Page size is configurable via a query parameter with a sane maximum",
+            "The table shows coloured status and priority badges and a relative age such as 3 days ago",
+            "Loading, empty and error states are all handled with distinct UI"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 5,
+          "sprint": 2
+        },
+        {
+          "id": "E4-S4",
+          "summary": "Filter and sort the ticket queue",
+          "role": "agent",
+          "want": "to filter by status, priority, category, assignee and escalation state and to sort the results",
+          "soThat": "I can narrow thousands of tickets down to the ones I must act on",
+          "acceptanceCriteria": [
+            "All filters compose on a single request and can be combined freely",
+            "Sorting is supported on created_at, updated_at and priority level, ascending and descending",
+            "Only whitelisted sort columns are accepted, so the parameter cannot be used for injection",
+            "Active filters are reflected in the URL query string so a filtered view can be bookmarked and shared",
+            "A visible clear-all control resets every filter at once"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 5,
+          "sprint": 2
+        },
+        {
+          "id": "E4-S5",
+          "summary": "Search tickets",
+          "role": "agent",
+          "want": "to search by reference, subject, description or requester",
+          "soThat": "I can jump straight to a ticket a requester is asking about on the phone",
+          "acceptanceCriteria": [
+            "A single q parameter searches the reference, subject, description and requester name and email",
+            "Subject and description use the FULLTEXT index rather than a leading-wildcard LIKE",
+            "Searching an exact reference returns that ticket first",
+            "Search composes with the existing filters instead of replacing them",
+            "The input is debounced so typing does not fire a request per keystroke"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 2
+        },
+        {
+          "id": "E4-S6",
+          "summary": "Ticket detail page",
+          "role": "agent",
+          "want": "a detail page showing everything about a ticket alongside the actions I can take",
+          "soThat": "I can understand and progress a ticket from one screen",
+          "acceptanceCriteria": [
+            "GET /api/v1/tickets/{ticket} returns the full ticket with requester, category, priority, status, assignee and creator",
+            "The page shows all ticket fields, the escalation state and the resolved and closed timestamps when set",
+            "An action toolbar exposes assign, change status, escalate and edit, each hidden or disabled according to policy",
+            "Requesting a non-existent or soft-deleted ticket returns 404 and the SPA shows a not-found state",
+            "The page is reachable directly by URL and deep-links correctly after a reload"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 5,
+          "sprint": 2
+        },
+        {
+          "id": "E4-S7",
+          "summary": "Edit a ticket",
+          "role": "agent",
+          "want": "to correct a ticket's subject, description, category or priority",
+          "soThat": "mistakes at intake can be fixed without losing the record",
+          "acceptanceCriteria": [
+            "PATCH /api/v1/tickets/{ticket} accepts partial updates and validates only what is sent",
+            "Every changed field writes its own activity row capturing the old and new values",
+            "Status and assignee cannot be changed through this endpoint; they have dedicated actions",
+            "reference, created_by and all timestamps are immutable through the API",
+            "The edit form pre-populates and warns before discarding unsaved changes"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 3
+        },
+        {
+          "id": "E4-S8",
+          "summary": "Soft-delete a ticket",
+          "role": "admin",
+          "want": "to remove a ticket from the queue while keeping it recoverable",
+          "soThat": "spam and duplicates can be cleared without destroying data",
+          "acceptanceCriteria": [
+            "DELETE /api/v1/tickets/{ticket} is admin-only and performs a soft delete",
+            "Soft-deleted tickets are excluded from all lists, filters, searches and statistics",
+            "An activity row records who deleted the ticket and when",
+            "The UI asks for confirmation naming the ticket reference before deleting"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 2,
+          "sprint": 3
+        },
+        {
+          "id": "E4-S9",
+          "summary": "Dashboard with queue statistics",
+          "role": "agent",
+          "want": "a dashboard summarising the queue and my own workload",
+          "soThat": "I know where to start the moment I log in",
+          "acceptanceCriteria": [
+            "GET /api/v1/tickets/stats returns counts grouped by status and by priority plus unassigned and escalated totals",
+            "Statistics are produced by aggregate queries, not by loading tickets into PHP",
+            "The dashboard shows my open tickets, the unassigned count and the escalated count as cards",
+            "Each card links through to the ticket list with the matching filter already applied",
+            "An agent sees their own workload while an admin sees the whole queue"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 3
+        }
+      ]
+    },
+    {
+      "id": "E5",
+      "summary": "Assignment & Workload",
+      "goal": "Make ticket ownership explicit and visible: assign, claim, reassign, and see how work is distributed across agents.",
+      "labels": ["backend", "frontend"],
+      "stories": [
+        {
+          "id": "E5-S1",
+          "summary": "Assign a ticket to an agent",
+          "role": "admin",
+          "want": "to assign a ticket to a specific agent",
+          "soThat": "every ticket has one accountable owner",
+          "acceptanceCriteria": [
+            "POST /api/v1/tickets/{ticket}/assign sets assigned_to after validating the target is an active agent",
+            "Assigning to an inactive or non-existent user returns 422",
+            "An assigned activity row records the previous and new assignee",
+            "The assign modal lists only active agents, searchable by name",
+            "Assigning a ticket that is already assigned is treated as a reassignment, not an error"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 3
+        },
+        {
+          "id": "E5-S2",
+          "summary": "Unassigned queue with self-claim",
+          "role": "agent",
+          "want": "to see unassigned tickets and claim one for myself",
+          "soThat": "new work is picked up without waiting for an admin",
+          "acceptanceCriteria": [
+            "The ticket list offers an unassigned filter reachable in one click from the dashboard",
+            "An agent can claim an unassigned ticket, which assigns it to them",
+            "Claiming a ticket another agent already claimed returns a clear conflict message rather than silently overwriting",
+            "The claim action writes an activity row attributed to the claiming agent"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 3
+        },
+        {
+          "id": "E5-S3",
+          "summary": "My tickets view",
+          "role": "agent",
+          "want": "a view scoped to the tickets assigned to me",
+          "soThat": "I can focus on my own work without filtering every time",
+          "acceptanceCriteria": [
+            "A My Tickets route pre-applies the assigned-to-me filter and excludes terminal statuses by default",
+            "The view reuses the same table and filter components as the main list rather than duplicating them",
+            "A toggle reveals my resolved and closed tickets",
+            "The sidebar shows a live count of my open tickets"
+          ],
+          "labels": ["frontend"],
+          "points": 2,
+          "sprint": 3
+        },
+        {
+          "id": "E5-S4",
+          "summary": "Reassign or unassign with a reason",
+          "role": "admin",
+          "want": "to move a ticket to another agent or return it to the queue, recording why",
+          "soThat": "handovers are traceable rather than mysterious",
+          "acceptanceCriteria": [
+            "The assign endpoint accepts a null user to unassign and return the ticket to the queue",
+            "An optional reason is stored on the activity row and shown in the timeline",
+            "Reassignment notifies the new assignee and does not notify the previous one twice",
+            "Both reassign and unassign are covered by feature tests"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 3
+        },
+        {
+          "id": "E5-S5",
+          "summary": "Agent workload overview",
+          "role": "admin",
+          "want": "to see how many open tickets each agent is carrying, broken down by priority",
+          "soThat": "I can rebalance before someone is overwhelmed",
+          "acceptanceCriteria": [
+            "An endpoint returns open ticket counts per agent split by priority, using a grouped aggregate query",
+            "The screen highlights agents well above and well below the team average",
+            "Each agent row links to the ticket list filtered to that assignee",
+            "Inactive agents holding open tickets are surfaced so their work can be reassigned"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 3
+        }
+      ]
+    },
+    {
+      "id": "E6",
+      "summary": "Status Workflow & Escalation",
+      "goal": "A guarded status workflow that refuses illegal transitions, plus manual escalation that raises visibility and routes a ticket to an admin.",
+      "labels": ["backend", "frontend"],
+      "stories": [
+        {
+          "id": "E6-S1",
+          "summary": "Transition table and workflow guard",
+          "role": "developer",
+          "want": "a status_transitions table and a TicketWorkflow service that validates every status change against it",
+          "soThat": "the lifecycle is enforced by the server and stays configurable without code changes",
+          "acceptanceCriteria": [
+            "status_transitions stores from_status_id, to_status_id and an optional required_role",
+            "Seeded edges implement New to Open to In Progress to Resolved to Closed, with Pending reachable from the active states and Reopened reachable from the terminal ones",
+            "TicketWorkflow exposes allowedTransitions(ticket, user) and assertCanTransition(...)",
+            "Any status change not present in the table is rejected with 422 and a message naming the attempted move",
+            "A transition whose required_role is admin is refused for agents",
+            "Unit tests cover both a legal and an illegal move for every seeded status"
+          ],
+          "labels": ["backend", "database", "testing"],
+          "points": 5,
+          "sprint": 3
+        },
+        {
+          "id": "E6-S2",
+          "summary": "Change a ticket's status",
+          "role": "agent",
+          "want": "to move a ticket to its next status, seeing only the moves that are legal from here",
+          "soThat": "I cannot put a ticket into an invalid state by accident",
+          "acceptanceCriteria": [
+            "POST /api/v1/tickets/{ticket}/status transitions the ticket through TicketWorkflow",
+            "The ticket detail page offers only the transitions returned by allowedTransitions for the current user",
+            "Each change writes a status_changed activity row with the old and new status names",
+            "The UI reflects the new status immediately without a full page reload",
+            "A rejected transition surfaces the server message rather than a generic error"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 3
+        },
+        {
+          "id": "E6-S3",
+          "summary": "Resolving requires a resolution note",
+          "role": "agent",
+          "want": "to be required to explain the resolution when I resolve a ticket",
+          "soThat": "the record says how the problem was actually solved",
+          "acceptanceCriteria": [
+            "Transitioning into Resolved requires a non-empty resolution note of a minimum length",
+            "resolved_at is stamped on the ticket and cleared if the ticket is later reopened",
+            "The resolution note is stored on the activity row and rendered prominently in the timeline",
+            "Transitioning into Closed stamps closed_at",
+            "first_responded_at is stamped the first time a ticket leaves the New status"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 4
+        },
+        {
+          "id": "E6-S4",
+          "summary": "Reopen a closed ticket",
+          "role": "agent",
+          "want": "to reopen a resolved or closed ticket when the problem comes back",
+          "soThat": "a recurrence stays attached to its original history instead of starting a new ticket",
+          "acceptanceCriteria": [
+            "A reopen transition is available from Resolved and Closed and requires a reason",
+            "Reopening clears resolved_at and closed_at and moves the ticket to Reopened",
+            "A reopened activity row is written with the reason",
+            "The detail page badges the ticket as reopened and shows how many times it has been reopened"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 2,
+          "sprint": 4
+        },
+        {
+          "id": "E6-S5",
+          "summary": "Escalate a ticket",
+          "role": "agent",
+          "want": "to escalate a ticket with a reason when I cannot resolve it at my level",
+          "soThat": "it reaches someone who can act instead of stalling silently",
+          "acceptanceCriteria": [
+            "POST /api/v1/tickets/{ticket}/escalate increments escalation_level and stores escalated_at, escalated_by and escalation_reason",
+            "Escalation raises the priority by one level, stopping at the highest priority rather than overflowing",
+            "The ticket is routed to an admin, and the previous assignee is preserved in the activity trail",
+            "An escalated activity row captures the reason and the resulting escalation level",
+            "A terminal ticket cannot be escalated and returns 422",
+            "The reason is required with a minimum length"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 5,
+          "sprint": 4
+        },
+        {
+          "id": "E6-S6",
+          "summary": "Escalated tickets are visible at a glance",
+          "role": "admin",
+          "want": "escalated tickets clearly marked and filterable",
+          "soThat": "the tickets that need me are never buried in the queue",
+          "acceptanceCriteria": [
+            "The ticket list supports an escalated filter and shows an escalation badge with its level",
+            "The dashboard shows an escalated count that links to the filtered list",
+            "Escalated tickets can be sorted so the most recently escalated appear first",
+            "The badge visually distinguishes escalation level one from higher levels"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 2,
+          "sprint": 4
+        },
+        {
+          "id": "E6-S7",
+          "summary": "Flag stale tickets on a schedule",
+          "role": "admin",
+          "want": "a scheduled command that flags tickets with no activity for N days",
+          "soThat": "nothing is quietly forgotten in the queue",
+          "acceptanceCriteria": [
+            "An artisan command finds non-terminal tickets whose last activity is older than a configurable threshold",
+            "Each stale ticket receives a system activity row attributed to no user",
+            "The threshold and whether the command notifies are both configuration driven",
+            "The command is registered in the scheduler, is idempotent, and will not re-flag a ticket already flagged",
+            "Running the command with --dry-run reports what it would flag and changes nothing"
+          ],
+          "labels": ["backend"],
+          "points": 3,
+          "sprint": 4
+        }
+      ]
+    },
+    {
+      "id": "E7",
+      "summary": "Ticket History / Audit Trail",
+      "goal": "An append-only record of every change to every ticket, surfaced as a readable timeline. This is the epic that makes the system auditable.",
+      "labels": ["backend", "frontend", "database"],
+      "stories": [
+        {
+          "id": "E7-S1",
+          "summary": "Activity table and a single recorder",
+          "role": "developer",
+          "want": "the ticket_activities table plus an ActivityRecorder that is the only code path writing to it",
+          "soThat": "the audit trail is complete by construction rather than by good intentions",
+          "acceptanceCriteria": [
+            "ticket_activities stores ticket_id, nullable user_id, event, field, old_value, new_value, a JSON meta column and created_at",
+            "A backed enum defines every event type, so no raw event strings appear in the codebase",
+            "ActivityRecorder is the only class that inserts into ticket_activities, and TicketService is its only caller",
+            "A composite index on (ticket_id, created_at) keeps timeline reads fast",
+            "A null user_id means the actor was the system, and the UI renders it as such",
+            "Recording an activity happens in the same transaction as the change it describes, so the two can never disagree"
+          ],
+          "labels": ["backend", "database"],
+          "points": 5,
+          "sprint": 4
+        },
+        {
+          "id": "E7-S2",
+          "summary": "Ticket timeline",
+          "role": "agent",
+          "want": "a chronological timeline on the ticket page showing who changed what and when",
+          "soThat": "I can understand a ticket's whole story before I act on it",
+          "acceptanceCriteria": [
+            "GET /api/v1/tickets/{ticket}/activities returns activities newest first, paginated",
+            "Each entry renders as readable prose such as Ahmed changed status from Open to In Progress",
+            "Old and new values are shown for field changes, and the actor and relative time appear on every entry",
+            "Each event type has its own icon and colour so the timeline can be scanned quickly",
+            "System entries are visually distinct from user entries"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 5,
+          "sprint": 4
+        },
+        {
+          "id": "E7-S3",
+          "summary": "Internal notes on a ticket",
+          "role": "agent",
+          "want": "to add an internal note that appears in the timeline",
+          "soThat": "investigation and context are captured where the next agent will find them",
+          "acceptanceCriteria": [
+            "POST /api/v1/tickets/{ticket}/notes stores the note body as a note_added activity",
+            "Note body is required, length validated, and escaped so no HTML or script can be injected",
+            "Notes are internal only and are never included in any email to a requester",
+            "Adding a note does not change the ticket status or its updated_at semantics for staleness",
+            "Notes appear inline in the timeline in correct chronological position"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 3,
+          "sprint": 4
+        },
+        {
+          "id": "E7-S4",
+          "summary": "The audit trail is append-only",
+          "role": "admin",
+          "want": "activity records to be impossible to edit or delete",
+          "soThat": "the history can be trusted as evidence",
+          "acceptanceCriteria": [
+            "No update or delete endpoint exists for ticket_activities anywhere in the routes file",
+            "The model blocks updates and deletes at the application level as a second line of defence",
+            "Soft-deleting a ticket preserves all of its activity rows",
+            "A feature test asserts that no route can mutate or remove an existing activity"
+          ],
+          "labels": ["backend", "testing"],
+          "points": 2,
+          "sprint": 4
+        },
+        {
+          "id": "E7-S5",
+          "summary": "Timeline stays usable on long-running tickets",
+          "role": "agent",
+          "want": "the timeline paginated and filterable when a ticket has hundreds of entries",
+          "soThat": "a long history does not make the page unusable",
+          "acceptanceCriteria": [
+            "The timeline loads a first page and appends more on demand rather than loading everything",
+            "Entries can be filtered by event type, for example notes only or status changes only",
+            "A ticket with several hundred activities renders without a noticeable delay",
+            "The most recent entries are always visible first without extra interaction"
+          ],
+          "labels": ["backend", "frontend"],
+          "points": 2,
+          "sprint": 4
+        }
+      ]
+    },
+    {
+      "id": "E8",
+      "summary": "Email Notifications",
+      "goal": "Queued, retryable email on the events people care about, so a mail outage can never break a request or lose a notification.",
+      "labels": ["backend"],
+      "stories": [
+        {
+          "id": "E8-S1",
+          "summary": "Queue and mail infrastructure",
+          "role": "developer",
+          "want": "the database queue driver configured and Mailpit wired up in development",
+          "soThat": "mail is asynchronous and inspectable without sending anything real",
+          "acceptanceCriteria": [
+            "Queue uses the database driver with the jobs and failed_jobs tables migrated",
+            "Development mail goes to Mailpit and no email can reach a real address from a dev environment",
+            "README documents running the queue worker and where to view captured mail",
+            "Failed jobs land in failed_jobs with their exception and can be retried by command"
+          ],
+          "labels": ["backend", "devops"],
+          "points": 3,
+          "sprint": 5
+        },
+        {
+          "id": "E8-S2",
+          "summary": "Notify an agent when a ticket is assigned",
+          "role": "agent",
+          "want": "an email when a ticket is assigned to me",
+          "soThat": "I learn about new work without watching the queue",
+          "acceptanceCriteria": [
+            "Assignment dispatches a queued notification to the new assignee only",
+            "The email contains the reference, subject, priority, category, requester and a deep link to the ticket",
+            "No email is sent when a user assigns a ticket to themselves",
+            "Unassigning sends no email to anyone",
+            "A feature test asserts the notification is queued rather than sent synchronously"
+          ],
+          "labels": ["backend", "testing"],
+          "points": 3,
+          "sprint": 5
+        },
+        {
+          "id": "E8-S3",
+          "summary": "Confirm ticket creation to the requester",
+          "role": "requester",
+          "want": "a confirmation email carrying my ticket reference",
+          "soThat": "I have proof my request was logged and something to quote later",
+          "acceptanceCriteria": [
+            "Creating a ticket queues a confirmation email to the requester's address",
+            "The email leads with the reference and echoes the subject and description as submitted",
+            "The email states expectations plainly and makes no promise about response time, since no SLA engine exists",
+            "A ticket created without a requester email queues nothing and logs the skip",
+            "No internal notes or agent-only information appear in the email"
+          ],
+          "labels": ["backend"],
+          "points": 3,
+          "sprint": 5
+        },
+        {
+          "id": "E8-S4",
+          "summary": "Notify the requester on status change and resolution",
+          "role": "requester",
+          "want": "an email when my ticket progresses or is resolved",
+          "soThat": "I do not have to chase anyone for an update",
+          "acceptanceCriteria": [
+            "A status change to a requester-visible status queues an email naming the old and new status",
+            "Resolution email includes the resolution note",
+            "Which statuses are requester-visible is configuration driven, not hardcoded at the call site",
+            "Internal-only transitions send nothing",
+            "Rapid consecutive changes do not produce a burst of near-identical emails"
+          ],
+          "labels": ["backend"],
+          "points": 3,
+          "sprint": 5
+        },
+        {
+          "id": "E8-S5",
+          "summary": "Notify admins on escalation",
+          "role": "admin",
+          "want": "an email whenever a ticket is escalated",
+          "soThat": "escalations reach me even when I am not looking at the board",
+          "acceptanceCriteria": [
+            "Escalation queues an email to all active admins",
+            "The email carries the reason, the escalation level, the requester and who escalated it",
+            "The subject line marks it as escalated so it can be filtered in a mail client",
+            "Escalating to level two or higher is visibly distinguished from a first escalation"
+          ],
+          "labels": ["backend"],
+          "points": 2,
+          "sprint": 5
+        },
+        {
+          "id": "E8-S6",
+          "summary": "Shared responsive mail layout",
+          "role": "developer",
+          "want": "one Blade mail layout that every notification extends",
+          "soThat": "emails look consistent and render correctly across mail clients",
+          "acceptanceCriteria": [
+            "A single layout provides the header, footer and ticket-summary block reused by all mailables",
+            "Emails render correctly on desktop and mobile widths and degrade gracefully without CSS",
+            "Every email has a plain-text alternative part",
+            "The from address, product name and base URL all come from configuration",
+            "No email leaks internal notes, agent email addresses or stack traces"
+          ],
+          "labels": ["backend"],
+          "points": 3,
+          "sprint": 5
+        },
+        {
+          "id": "E8-S7",
+          "summary": "Notifications are queued, retried and never break a request",
+          "role": "developer",
+          "want": "every notification dispatched from a queued job with retries and backoff",
+          "soThat": "a mail failure degrades quietly instead of failing the user's action",
+          "acceptanceCriteria": [
+            "Every mailable is queued; no notification is sent inline during a request",
+            "Jobs declare tries and backoff, and exhausted jobs land in failed_jobs with context",
+            "A mail transport outage does not roll back or fail the ticket action that triggered it",
+            "Notifications dispatch after the database transaction commits, so no email references uncommitted data",
+            "Feature tests assert both the queued notification and its recipients for each event"
+          ],
+          "labels": ["backend", "testing"],
+          "points": 3,
+          "sprint": 5
+        }
+      ]
+    },
+    {
+      "id": "E9",
+      "summary": "Quality, Docs & Deployment",
+      "goal": "Make the system demonstrable, tested, documented and safely deployable.",
+      "labels": ["testing", "docs", "devops"],
+      "stories": [
+        {
+          "id": "E9-S1",
+          "summary": "Factories and a demo seeder",
+          "role": "developer",
+          "want": "model factories and a demo seeder producing a realistic dataset",
+          "soThat": "the app can be demonstrated and tested against believable data immediately",
+          "acceptanceCriteria": [
+            "Factories exist for users, requesters, categories, tickets and activities",
+            "A demo seeder creates admins, several agents, a spread of categories and roughly fifty tickets across every status and priority",
+            "Seeded tickets have plausible activity histories, including some assigned, some escalated and some resolved",
+            "Created dates are spread over recent months so date filters and age columns are meaningful",
+            "The demo seeder is separate from the production seeder and never runs in production"
+          ],
+          "labels": ["backend", "testing"],
+          "points": 3,
+          "sprint": 5
+        },
+        {
+          "id": "E9-S2",
+          "summary": "Backend feature test suite",
+          "role": "developer",
+          "want": "feature tests covering authentication, ticket CRUD, assignment, the workflow guard, escalation and activity logging",
+          "soThat": "the business rules stay true as the codebase grows",
+          "acceptanceCriteria": [
+            "Authentication tests cover login, logout, rate limiting and the inactive-user case",
+            "Authorization tests assert an agent receives 403 on every admin-only endpoint",
+            "Workflow tests assert both a legal and an illegal transition for each seeded status",
+            "Escalation tests assert the level increment, the priority bump and its ceiling, and the activity row",
+            "Activity tests assert that every mutation path writes exactly the expected rows",
+            "The suite runs against MySQL in CI and passes from a clean database"
+          ],
+          "labels": ["testing", "backend"],
+          "points": 8,
+          "sprint": 5
+        },
+        {
+          "id": "E9-S3",
+          "summary": "Frontend component tests",
+          "role": "developer",
+          "want": "Vitest tests for the ticket table, the filters and the ticket form",
+          "soThat": "the components users touch most do not regress silently",
+          "acceptanceCriteria": [
+            "TicketTable tests cover rendering, the empty state and the loading state",
+            "TicketFilters tests assert that changing a filter emits the expected query and that clear-all resets everything",
+            "TicketForm tests cover validation errors, a successful submit and the double-submit guard",
+            "The auth store is tested for login, logout and rehydration",
+            "npm run test:unit passes in CI"
+          ],
+          "labels": ["testing", "frontend"],
+          "points": 5,
+          "sprint": 5
+        },
+        {
+          "id": "E9-S4",
+          "summary": "API documentation",
+          "role": "developer",
+          "want": "generated API documentation covering every endpoint",
+          "soThat": "the frontend contract is explicit and does not have to be reverse-engineered",
+          "acceptanceCriteria": [
+            "Every endpoint is documented with its method, path, parameters, request body and response shape",
+            "Authentication and the role requirement per endpoint are stated",
+            "Error responses, including validation 422 and authorization 403, are documented",
+            "docs/ contains the ERD and an overview of the ticket lifecycle",
+            "The documentation is generated or verified in CI so it cannot silently drift"
+          ],
+          "labels": ["docs"],
+          "points": 3,
+          "sprint": 5
+        },
+        {
+          "id": "E9-S5",
+          "summary": "Production build and deployment runbook",
+          "role": "developer",
+          "want": "a documented, repeatable deployment path",
+          "soThat": "releasing is routine rather than an adventure",
+          "acceptanceCriteria": [
+            "Frontend production build is verified and its output path documented",
+            "Runbook covers migrations, config and route caching, the queue worker and the scheduler as long-running processes",
+            "Every required production environment variable is listed with guidance, and debug mode is off",
+            "Rollback steps are documented, including how to reverse a migration",
+            "A first-deploy checklist covers creating the initial admin account safely"
+          ],
+          "labels": ["devops", "docs"],
+          "points": 5,
+          "sprint": 5
+        },
+        {
+          "id": "E9-S6",
+          "summary": "Security hardening pass",
+          "role": "developer",
+          "want": "a deliberate security review of the finished system",
+          "soThat": "obvious vulnerabilities are closed before anyone relies on this",
+          "acceptanceCriteria": [
+            "Login and all write endpoints are rate limited",
+            "CORS is restricted to an explicit origin allowlist, never a wildcard in production",
+            "Every model defines fillable fields, so no mass-assignment hole exists on any request",
+            "All output is escaped and every user-supplied string in the timeline and ticket views is checked against XSS",
+            "No query concatenates user input; all filters and sorts use bindings or a whitelist",
+            "No secret, token or credential is present anywhere in the repository history"
+          ],
+          "labels": ["backend", "testing"],
+          "points": 5,
+          "sprint": 5
+        }
+      ]
+    }
+  ]
+}

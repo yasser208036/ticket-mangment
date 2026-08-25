@@ -1,0 +1,50 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+tools/jira/.jira.env
+
+# Jira upload state (local bookkeeping, regenerable)
+tools/jira/created-issues.json
+
+# PHP / Laravel
+/backend/vendor/
+vendor/
+/backend/storage/*.key
+/backend/storage/framework/cache/*
+/backend/storage/framework/sessions/*
+/backend/storage/framework/views/*
+/backend/storage/logs/*
+/backend/public/build/
+/backend/public/hot
+/backend/public/storage
+/backend/.phpunit.result.cache
+/backend/.phpunit.cache/
+
+# Node / Vue
+node_modules/
+/frontend/dist/
+/frontend/.vite/
+/frontend/coverage/
+*.local
+
+# Editors & OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Managed by squad-kit — do not edit this block
+.squad/secrets.yaml
+.squad/stories/**/attachments/
+.squad/.trash/
+.squad/.last-run.json
+.squad/.last-copy-prompt.md
+.squad/runs/
+# End squad-kit block
