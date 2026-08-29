@@ -1,0 +1,67 @@
+[90m= [39m[34;4mIlluminate\Database\Eloquent\Collection[39;24m {#8215
+    [34mall[39m: [
+      [34;4mApp\Models\User[39;24m {#8217
+        [34mid[39m: [35m1[39m,
+        [34mname[39m: [32m"[39m[32mAdmin[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32madmin@ticket-management.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32madmin[39m[32m"[39m,
+        [34mis_active[39m: [35m1[39m,
+      },
+      [34;4mApp\Models\User[39;24m {#8216
+        [34mid[39m: [35m2[39m,
+        [34mname[39m: [32m"[39m[32mAda Lovelace[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32mada-lovelace@demo.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32madmin[39m[32m"[39m,
+        [34mis_active[39m: [35m1[39m,
+      },
+      [34;4mApp\Models\User[39;24m {#8219
+        [34mid[39m: [35m3[39m,
+        [34mname[39m: [32m"[39m[32mGrace Hopper[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32mgrace-hopper@demo.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32madmin[39m[32m"[39m,
+        [34mis_active[39m: [35m1[39m,
+      },
+      [34;4mApp\Models\User[39;24m {#8220
+        [34mid[39m: [35m4[39m,
+        [34mname[39m: [32m"[39m[32mAlan Turing[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32malan-turing@demo.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32magent[39m[32m"[39m,
+        [34mis_active[39m: [35m1[39m,
+      },
+      [34;4mApp\Models\User[39;24m {#8221
+        [34mid[39m: [35m5[39m,
+        [34mname[39m: [32m"[39m[32mKatherine Johnson[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32mkatherine-johnson@demo.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32magent[39m[32m"[39m,
+        [34mis_active[39m: [35m1[39m,
+      },
+      [34;4mApp\Models\User[39;24m {#8222
+        [34mid[39m: [35m6[39m,
+        [34mname[39m: [32m"[39m[32mMargaret Hamilton[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32mmargaret-hamilton@demo.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32magent[39m[32m"[39m,
+        [34mis_active[39m: [35m1[39m,
+      },
+      [34;4mApp\Models\User[39;24m {#8223
+        [34mid[39m: [35m7[39m,
+        [34mname[39m: [32m"[39m[32mDennis Ritchie[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32mdennis-ritchie@demo.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32magent[39m[32m"[39m,
+        [34mis_active[39m: [35m1[39m,
+      },
+      [34;4mApp\Models\User[39;24m {#8224
+        [34mid[39m: [35m8[39m,
+        [34mname[39m: [32m"[39m[32mBarbara Liskov[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32mbarbara-liskov@demo.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32magent[39m[32m"[39m,
+        [34mis_active[39m: [35m1[39m,
+      },
+      [34;4mApp\Models\User[39;24m {#8225
+        [34mid[39m: [35m9[39m,
+        [34mname[39m: [32m"[39m[32mRadia Perlman[39m[32m"[39m,
+        [34memail[39m: [32m"[39m[32mradia-perlman@demo.test[39m[32m"[39m,
+        [34mrole[39m: [32m"[39m[32magent[39m[32m"[39m,
+        [34mis_active[39m: [35m0[39m,
+      },
+    ],
+  }
