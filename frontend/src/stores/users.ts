@@ -62,12 +62,25 @@ export const useUsersStore = defineStore('users', () => {
     // the previous fetch on screen offers agents who may since have been
     // deactivated -- selectable, then a 422 on submit.
     agents.value = []
-    const response = await listUsers({
-      role: 'agent',
-      status: 'active',
-      per_page: 100,
-    })
-    agents.value = response.data
+    // Paged to exhaustion, because 100 is the endpoint's own per_page ceiling
+    // and a single request would drop agent 101 from the picker with nothing
+    // on screen to say so. Accumulated locally and assigned once, so a failure
+    // on page 2 leaves `agents` empty rather than half a roster.
+    const collected: AdminUser[] = []
+    let page = 1
+    let lastPage = 1
+    do {
+      const response = await listUsers({
+        role: 'agent',
+        status: 'active',
+        page,
+        per_page: 100,
+      })
+      collected.push(...response.data)
+      lastPage = response.meta.last_page
+      page += 1
+    } while (page <= lastPage)
+    agents.value = collected
   }
   async function applyFilters(next: {
     search?: string

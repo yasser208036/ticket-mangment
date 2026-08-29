@@ -123,7 +123,10 @@ export const useTicketsStore = defineStore('tickets', () => {
       await escalateTicket(id, reason)
       // Re-read: escalating changes the priority, the assignee, and
       // can.escalate itself, and the response omits the last of those.
-      await loadTicket(id)
+      // Not via loadTicket() -- it nulls `current` first, unmounting the
+      // escalate dialog mid-confirm so its `escalated` emit is dropped. Same
+      // hazard assign() and changeStatus() document.
+      current.value = await getTicket(id)
       void useStatsStore().load()
     } finally {
       escalating.value = false

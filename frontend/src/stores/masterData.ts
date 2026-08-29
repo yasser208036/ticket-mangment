@@ -64,16 +64,6 @@ export const useMasterDataStore = defineStore('masterData', () => {
   const activeCategories = computed(() =>
     categories.value.filter((entry) => entry.is_active),
   )
-  const openStatusIds = computed(() =>
-    statuses.value
-      .filter((entry) => !entry.is_terminal)
-      .map((entry) => entry.id),
-  )
-  const terminalStatusIds = computed(() =>
-    statuses.value
-      .filter((entry) => entry.is_terminal)
-      .map((entry) => entry.id),
-  )
   const defaultPriority = computed(
     () => priorities.value.find((entry) => entry.is_default) ?? null,
   )
@@ -89,8 +79,6 @@ export const useMasterDataStore = defineStore('masterData', () => {
     priorityById,
     statusById,
     activeCategories,
-    openStatusIds,
-    terminalStatusIds,
     defaultPriority,
   }
 })

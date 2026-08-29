@@ -25,6 +25,29 @@ vi.mock('../api/stats', async (loadOriginal) => ({
 
 const agent = { id: 7, name: 'Nadia' }
 
+/** One page of the admin user list, shaped as the API returns it. */
+function agentPage(
+  people: { id: number; name: string }[],
+  lastPage: number,
+  currentPage = 1,
+) {
+  return {
+    data: people.map((person) => ({
+      ...person,
+      email: `${person.name.toLowerCase()}@example.test`,
+      role: 'agent',
+      is_active: true,
+      created_at: '2026-08-25T00:00:00Z',
+    })),
+    meta: {
+      current_page: currentPage,
+      last_page: lastPage,
+      per_page: 100,
+      total: people.length * lastPage,
+    },
+  } as never
+}
+
 const ticket: TicketDetail = {
   id: 1,
   reference: 'TKT-2026-000001',
@@ -132,18 +155,7 @@ describe('TicketAssignDialog', () => {
     vi.mocked(getTicket).mockResolvedValue(ticket)
     vi.mocked(assignTicket).mockResolvedValue(ticket)
     vi.mocked(getTicketStats).mockRejectedValue(new Error('not under test'))
-    vi.mocked(listUsers).mockResolvedValue({
-      data: [
-        {
-          ...agent,
-          email: 'nadia@example.test',
-          role: 'agent',
-          is_active: true,
-          created_at: '2026-08-25T00:00:00Z',
-        },
-      ],
-      meta: { current_page: 1, last_page: 1, per_page: 100, total: 1 },
-    } as never)
+    vi.mocked(listUsers).mockResolvedValue(agentPage([agent], 1))
   })
 
   it('asks only for active agents, so an admin can never be offered', async () => {
@@ -151,6 +163,7 @@ describe('TicketAssignDialog', () => {
     expect(listUsers).toHaveBeenCalledWith({
       role: 'agent',
       status: 'active',
+      page: 1,
       per_page: 100,
     })
   })
@@ -211,6 +224,38 @@ describe('TicketAssignDialog', () => {
         .get('[data-testid="ticket-assign-unassign"]')
         .attributes('disabled'),
     ).toBeUndefined()
+  })
+
+  /**
+   * 100 is the endpoint's own per_page ceiling, so a single request would drop
+   * agent 101 from the picker with nothing on screen to say so.
+   */
+  it('pages past the per_page ceiling so no agent is missing from the picker', async () => {
+    const overflow = { id: 8, name: 'Omar' }
+    vi.mocked(listUsers)
+      .mockResolvedValueOnce(agentPage([agent], 2, 1))
+      .mockResolvedValueOnce(agentPage([overflow], 2, 2))
+    const wrapper = await mountLoaded()
+
+    expect(listUsers).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(listUsers).mock.calls[1]?.[0]).toMatchObject({ page: 2 })
+    expect(wrapper.findAll('option').map((option) => option.text())).toEqual([
+      'Choose an agent…',
+      'Nadia',
+      'Omar',
+    ])
+  })
+
+  it('keeps the picker empty when a later page fails, not half a roster', async () => {
+    vi.mocked(listUsers)
+      .mockResolvedValueOnce(agentPage([agent], 2, 1))
+      .mockRejectedValueOnce(new Error('offline'))
+    const wrapper = await mountLoaded()
+
+    expect(wrapper.findAll('option')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="ticket-assign-error"]').text()).toBe(
+      'The API is unreachable.',
+    )
   })
 
   it('drops a previously loaded agent list when a later load fails', async () => {
