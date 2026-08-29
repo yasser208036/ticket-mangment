@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Admin\UserController;
+use App\Http\Controllers\Api\V1\Admin\UserPasswordController;
 use App\Http\Controllers\Api\V1\Admin\WorkloadController;
 use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
@@ -61,6 +62,10 @@ Route::middleware(['auth:sanctum', 'active'])->group(function (): void {
         Route::post('/users', [UserController::class, 'store'])->middleware('throttle:write')->name('users.store');
         Route::get('/users/{user}', [UserController::class, 'show'])->name('users.show');
         Route::patch('/users/{user}', [UserController::class, 'update'])->middleware('throttle:write')->name('users.update');
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('throttle:write')->name('users.destroy');
+        // The tighter limiter, not `write`: setting someone else's password is
+        // 6/min keyed by the acting admin, the same one /auth/password uses.
+        Route::patch('/users/{user}/password', UserPasswordController::class)->middleware('throttle:password')->name('users.password');
         Route::get('/workload', WorkloadController::class)->name('workload');
     });
 });

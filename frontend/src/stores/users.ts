@@ -1,10 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { errorMessage } from '../api/errors'
-import { createUser, listUsers, updateUser } from '../api/users'
+import {
+  createUser,
+  deleteUser,
+  listUsers,
+  resetUserPassword,
+  updateUser,
+} from '../api/users'
 import type {
   AdminUser,
   CreateUserPayload,
+  ResetPasswordPayload,
   UpdateUserPayload,
 } from '../api/users'
 import type { Paginated } from '../api/pagination'
@@ -62,6 +69,20 @@ export const useUsersStore = defineStore('users', () => {
     await updateUser(id, payload)
     await load()
   }
+  async function remove(id: number, reassignTo?: number): Promise<void> {
+    await deleteUser(id, reassignTo)
+    // Deleting the only row of page 3 otherwise leaves an empty page 3 with
+    // working pagination controls, which reads as data loss.
+    if (users.value.length === 1 && page.value > 1) page.value -= 1
+    await load()
+  }
+  async function resetPassword(
+    id: number,
+    payload: ResetPasswordPayload,
+  ): Promise<void> {
+    // No reload: nothing in the list changed.
+    await resetUserPassword(id, payload)
+  }
   return {
     users,
     meta,
@@ -76,5 +97,7 @@ export const useUsersStore = defineStore('users', () => {
     goToPage,
     create,
     update,
+    remove,
+    resetPassword,
   }
 })

@@ -1,5 +1,33 @@
 # Story 10 — Admin manages agent accounts (Story: TM-12)
 
+## Amendment — admin-set passwords and account deletion (2026-08-29)
+
+This plan originally shipped **four** endpoints and refused two things on purpose: an admin could not set another user's password, and there was no `DELETE` route at all. **Both are now in scope by request.** The original reasoning is not deleted — it is superseded in place, in the two Product-rules sections that argued for it, so a reader can see what changed and why. The new work is **tasks 14–22**, added after task 13; the original thirteen are unchanged.
+
+Tasks 14–22 assume the original story has landed. It has — and the tree has moved on from this plan in four ways the new work must respect, each verified by reading the working tree today:
+
+- **Policies landed (TM-13).** Every `UserController` action now opens with `$this->authorize(...)`, and `app/Policies/UserPolicy.php` ends with `public function delete(User $user, User $target): bool { return false; }`. Task 14 flips it, and `tests/Feature/Policies/UserPolicyTest.php:73` — `test_nobody_can_delete` — is a test that must be **rewritten**, not deleted.
+- **Rate limiting landed (TM-64).** Every `POST`/`PATCH`/`DELETE` route under `api/v1` carries a `throttle:` middleware or `tests/Feature/Security/RateLimitCoverageTest.php` fails. Both new routes carry one, and they are not the same one.
+- **The tickets schema landed (TM-21)**, which is what makes delete a real design problem rather than a route:
+
+    | Column | `ON DELETE` | What deleting a user actually does |
+    |---|---|---|
+    | `tickets.created_by` | **`RESTRICT`** | The `DELETE` fails at the driver — SQLSTATE 23000 / errno 1451 — and surfaces as a **`500`**. Nothing can delete a user who ever created a ticket until those rows move. |
+    | `tickets.assigned_to` | `SET NULL` | Their open tickets silently become unassigned, with nothing in the timeline saying why. |
+    | `tickets.escalated_by` | `SET NULL` | A historical escalator is lost. Acceptable — it is a past act, not a live assignment. |
+    | `ticket_activities.user_id` | `SET NULL` | Audit rows keep the event, the field, the old and new values and the timestamp, and lose the actor. |
+
+    Confirmed in `database/migrations/2026_08_26_084625_create_tickets_table.php:23-27` and `..._create_ticket_activities_table.php:14`. `Ticket` uses `SoftDeletes`, so **every count and every reassignment below is `withTrashed()`** — a soft-deleted ticket still holds a live FK.
+
+- **There is an in-repo answer to exactly this problem.** `CategoryController::destroy` already solves "delete a row other rows point at": lock, count with `withTrashed()`, `422` carrying `reassign_to` plus `ticket_count` plus `reassign_to_options` when the caller has not chosen a destination, move the rows, record the move on the audit trail, then delete. `frontend/src/components/CategoryDeleteDialog.vue` and `api/categories.ts`'s `deleteBlockedBy()` are the matching client half. **Tasks 16 and 21 follow that shape deliberately** — a second delete flow that behaves differently from the first is a worse outcome than either design on its own.
+
+- **The original story's five test files were never created.** This is the uncomfortable one, and it was measured, not assumed: `grep -rln "admin/users\|admin\.users" backend/tests/` returns **one** file — `Authorization/RouteAuthorizationTest.php`, which only classifies the routes — and `grep -rn "last active administrator" backend/tests/` returns **nothing**. `UserIndexTest`, `UserStoreTest`, `UserUpdateTest`, `UserLockoutTest` and `AdminAuthorizationTest` do not exist; the endpoints' only coverage is the route classification plus `Policies/UserPolicyTest.php`. So **the self-lockout guard in `UserController::guardAgainstLockout` is live, load-bearing and untested today.** Task 16 refactors that guard. Write the seven `UserLockoutTest` tests from this plan's original Test Plan **before** touching it — see the amendment's test note — or the refactor has nothing holding it.
+
+Two registries are CI-enforced and will fail the moment a route is added without them — both are task 19:
+
+- `tests/Feature/Authorization/RouteAuthorizationTest.php`'s `ACCESS` constant maps **every** `api/v1` route name to an access level; an unlisted route fails `test_every_api_route_is_classified`.
+- `tests/Feature/Documentation/ApiContractCoverageTest.php` parses the `| \`METHOD\` | \`/path\` |` rows out of `docs/api-contract.md` and asserts the set matches the router **in both directions**.
+
 ## Prerequisites
 
 **Stories 06 through 09 (TM-8, TM-9, TM-10, TM-11) all landed while this plan was being written.** They are prerequisites in the ordinary sense — every one of them is verified below by reading the working tree, so nothing here is a blocker, but re-confirm before starting because a plan written against a moving tree can go stale.
@@ -26,7 +54,7 @@
 
 ## Story Goal
 
-The first CRUD screen in the product, and the first place an administrator's mistake can lock everyone out of it. Four endpoints under `/api/v1/admin/users`, one admin-only middleware, and a Users screen that replaces TM-11's placeholder.
+The first CRUD screen in the product, and the first place an administrator's mistake can lock everyone out of it. Four endpoints under `/api/v1/admin/users`, one admin-only middleware, and a Users screen that replaces TM-11's placeholder — **plus the two the amendment adds, for a shipped total of six**: a delete that moves the target's tickets before it removes them, and an admin-set password on its own route.
 
 Audit of the five acceptance criteria against the code as it stands:
 
@@ -35,7 +63,7 @@ Audit of the five acceptance criteria against the code as it stands:
 | 1 | Users list shows name, email, role, active state and **ticket count**, paginated and searchable | ⚠️ **Deliverable except the ticket count.** `ls backend/database/migrations/` returns four files and **none of them creates a `tickets` table** — that is `TM-21` (E4-S1), two epics away. Name, email, role, active state, pagination and search all ship here. See "The ticket count cannot ship yet" below for the exact diff TM-21 owes. |
 | 2 | Admin can create a user, choosing the admin or agent role, with validation on a unique email | ❌ **Not met**, and the role half is a trap: `role` is deliberately **not** in `#[Fillable]` (`User.php:14`), so `User::create($request->validated())` silently drops it and every new account becomes an agent. `AdminUserSeeder.php:26-32` is the in-repo idiom for doing it correctly. |
 | 3 | Admin can edit a user's name, email and role, and toggle `is_active` | ❌ **Not met.** `routes/api.php` has four routes — `health`, `auth.login`, `auth.logout`, `auth.me` — and no controller under `Api/V1/Admin/`. Note what is **absent** from criterion 3's list: the password. See "What an admin cannot do" below. |
-| 4 | Deactivating rather than deleting is the default, so ticket history keeps a valid author | ❌ **Not met**, and this story satisfies it by giving deactivation no competitor: **there is no `destroy` endpoint at all.** |
+| 4 | Deactivating rather than deleting is the default, so ticket history keeps a valid author | ❌ **Not met.** Originally satisfied by giving deactivation no competitor — no `destroy` endpoint at all. **Amended:** delete now exists (task 16), and the criterion is satisfied instead by making deactivation the *cheap* path and delete the one that has to answer "where do this person's tickets go?" first. "Default" is now literal rather than enforced by absence. |
 | 5 | An admin cannot deactivate or demote their own account, preventing lockout | ❌ **Not met**, and "cannot demote themselves" is not quite the invariant that matters. See "The rule that needs a row lock" — the self-check alone leaves a two-request race that empties the admin role entirely. |
 
 Eight outcomes:
@@ -47,9 +75,16 @@ Eight outcomes:
 5. Deactivating a user **revokes their tokens**, closing the door TM-9 and TM-10 both flagged and left open.
 6. No administrator can deactivate or demote themselves, **or** the last active admin — so the system always has at least one way in.
 7. The Users screen lists, searches, filters, paginates, creates and edits, with field-level validation errors attached to the right inputs.
-8. `docs/api-contract.md` gains four endpoints and the project's first documented pagination envelope.
+8. `docs/api-contract.md` gains four endpoints (six after the amendment) and the project's first documented pagination envelope.
 
-**Not in scope:** the ticket count column (**TM-21** — see below); policies and per-record authorization, which refine but do not replace this story's middleware (**TM-13**); a user's own password change (**TM-14**); an admin-initiated password reset and any "invite by email" flow (**no story owns either** — recorded in Edge Cases); hard-deleting a user (**no story owns it**, deliberately); the demo seeder and richer factories (**TM-59**); API-wide throttling and token expiry (**TM-64**); and a component library — the screen uses plain elements and the custom properties already in `frontend/src/style.css`.
+**Two more outcomes, added by the amendment:**
+
+9. `PATCH /api/v1/admin/users/{user}/password` lets an admin set another user's password, re-authenticating the admin first and revoking every token the target holds.
+10. `DELETE /api/v1/admin/users/{user}` removes an account, refusing with a `422` that names the destination it needs whenever that account still owns tickets — and never touching the last active administrator.
+
+**Not in scope:** the ticket count column (**TM-21** — see below); policies and per-record authorization, which refine but do not replace this story's middleware (**TM-13**); a user's own password change (**TM-14**); the demo seeder and richer factories (**TM-59**); API-wide throttling and token expiry (**TM-64**); and a component library — the screen uses plain elements and the custom properties already in `frontend/src/style.css`.
+
+**Moved into scope by the amendment:** an admin-initiated password reset (task 17) and hard-deleting a user (task 16). **Still out**, and now more pointedly so: an *email-based self-service* reset — `password_reset_tokens` exists and nothing reads it — and any "invite by email" flow. Also out: **emailing the user that their password was changed**, which the notification architecture could carry in a day and which no story owns; it is recorded in Edge Cases rather than smuggled in here.
 
 ---
 
@@ -101,13 +136,50 @@ Rule 2 needs `SELECT … FOR UPDATE` around the count-then-update, so **it canno
 
 This is a deliberate departure from "validation belongs in the FormRequest", and the reason is the lock, not taste. Task 4's `UpdateUserRequest` still owns everything that is genuinely a shape check: types, the enum, the unique email.
 
-### Deactivate, never delete
+### Delete exists now — and it has to move the tickets first *(supersedes "Deactivate, never delete")*
 
-There is **no `destroy` route** in this story, and that is what satisfies acceptance criterion 4 — deactivation is not "the default", it is the only option.
+> **Originally:** there was no `destroy` route, and acceptance criterion 4 was satisfied by giving deactivation no competitor. The reason given was that `ON DELETE RESTRICT` on `tickets.created_by` would turn a working delete into a `500` the moment TM-21 landed. **That prediction was correct** — `create_tickets_table.php:24` is `->constrained('users')->restrictOnDelete()`. The amendment does not wave it away; it pays the price the original plan declined to pay, which is the "reassign or anonymise their tickets first" step that same section said a future story would owe.
 
-Adding one now would be a hole that closes itself later in the worst way. `backend/phpunit.xml:27-35` records that the planned schema uses `ON DELETE RESTRICT`, so the moment TM-21 adds `tickets.created_by` / `assigned_to`, a delete that works today starts throwing a driver-level `QueryException` — a `500`, from an endpoint an admin had learned to trust. Better to never offer it.
+The rule, restated:
 
-Nothing in `tools/jira/backlog.json` asks for a hard delete. If product ever does, it belongs in its own story with a "reassign or anonymise their tickets first" step, and that story can decide whether it is worth the foreign-key work.
+**Deactivation stays the default. Delete is real, and it is never silent.**
+
+A `DELETE` on a user is refused unless every ticket that points at them has somewhere else to go. Concretely, `DELETE /api/v1/admin/users/{user}` behaves as:
+
+| Situation | Response |
+|---|---|
+| Caller is not an admin | `403` from the `admin` middleware, before binding |
+| Target **is** the caller | `403` from `UserPolicy::delete` — you cannot delete the account making the request |
+| Target is the **last active admin** | `422`, `errors.user`, checked under `lockForUpdate()` — the same race the update endpoint already guards |
+| Target still holds tickets and no `reassign_to` was sent | `422`, `errors.reassign_to`, plus `ticket_count` and `reassign_to_options` in the body |
+| `reassign_to` names an inactive, unknown, or self id | `422`, `errors.reassign_to`, from the FormRequest |
+| Otherwise | `204`, tickets moved, activity rows written, tokens revoked, row gone |
+
+Four decisions inside that, none of them stylistic:
+
+- **The `422` carries its own options list.** `CategoryController::reassignmentRequired` returns `message`, `errors.reassign_to`, `ticket_count` and `reassign_to_options` in one body, so the client can render "12 tickets — move them to whom?" without a second round trip and without knowing which users are eligible. Task 16 returns the identical shape for users; task 21's dialog is `CategoryDeleteDialog.vue` with the nouns changed.
+- **Both `created_by` and `assigned_to` move to the same destination.** `assigned_to` would be nulled by the FK on its own, and letting that happen is the failure mode this design exists to prevent: an agent leaves, a dozen live tickets quietly lose their owner, and the queue looks healthy because nothing was flagged. Reassignment is explicit, and **it writes to the audit trail** — `Assigned` for the tickets that were assigned, `Updated` with `field => 'created_by'` for the ones they authored, both with `meta.reason = 'user_deleted'` and the deleted person's name. No new `TicketActivityEvent` case, so `ActivityCoverageTest` needs no new wiring.
+- **`escalated_by` and `ticket_activities.user_id` are left to `SET NULL`, on purpose.** Both are records of a past act by a person who no longer exists; rewriting them to point at whoever inherited the tickets would be a lie in an append-only trail. The visible consequence — a timeline entry with no actor — is the same one a system-generated `stale` event already produces, so the frontend already renders it. **Verification step 27 checks that, rather than assuming it.**
+- **Hard delete, not soft.** `users` has no `deleted_at`, and adding one would drag in a migration, the unique-email semantics (can a deleted user's address be reused?), and every `User::query()` in the codebase. That is a bigger change than this amendment, and the reassignment step already preserves what mattered — the tickets.
+
+**The UI must still say deactivation is the ordinary answer.** Task 22 puts Delete behind a confirmation dialog that names the consequence, and leaves Deactivate as the one-click control in the edit form. The endpoint is not the place to express a preference; the screen is.
+
+### An admin can set someone else's password — on its own endpoint *(supersedes "What an admin cannot do")*
+
+> **Originally:** `PATCH /admin/users/{user}` had no `password` field, and the plan recorded the resulting gap in as many words — *"an agent who forgets their password cannot be helped through the UI"*, recovery via `php artisan tinker`. The amendment closes exactly that gap, and closes it the way that section demanded: **not** by "quietly adding a `password` field to the update endpoint", but as its own endpoint with its own decisions.
+
+`PATCH /api/v1/admin/users/{user}/password`, and it is a separate route rather than a fifth key in `UpdateUserRequest` for four reasons that are each independently sufficient:
+
+1. **A different throttle.** `AppServiceProvider::boot()` already registers `password` at **6/min keyed by user id** next to `write` at 60/min. Setting passwords belongs on the tighter one, and a middleware is per-route, not per-field.
+2. **A different side effect.** Every one of the target's tokens is revoked. Folding that into `update` means a request that only changed a display name has a branch that can sign someone out.
+3. **A different pre-condition.** The endpoint requires the **acting admin's own** password (`current_password:sanctum`, the same rule `UpdatePasswordRequest` already uses). An unattended admin session is otherwise a one-click takeover of every account in the system, including the other admins'. This is the one call in the amendment most likely to draw an objection on friction grounds — it is a deliberate trade, it costs one extra field in one dialog, and if product overrules it, delete the rule and its two tests and nothing else changes.
+4. **The SPA's update path sends a diff.** `UserFormDialog.vue` builds its `PATCH` body by comparing against the `user` prop; a `password` key in that payload shape is a field that could be sent by accident. Keeping it on another endpoint means it can only ever be sent on purpose.
+
+Three things it deliberately does **not** do:
+
+- **No `password_confirmation`.** Unlike `PATCH /auth/password` — where a typo locks *you* out of the only account that can fix it — an admin typo here is recovered by the admin repeating the reset thirty seconds later. The self-service endpoint keeps `confirmed`; this one does not, matching `POST /admin/users`, which has never had it.
+- **No self-service.** `UserPolicy::resetPassword` denies when target *is* actor, so an admin changing their own password goes through `PATCH /auth/password` and proves they know the current one. Same rule, no exception carved for admins.
+- **No email to the user.** The app has a full queued event → listener → notification chain and "your password was changed by an administrator" is a message that chain should carry. **No story owns it**, it is not smuggled in here, and it is recorded in Edge Cases so the gap is visible rather than forgotten. What ships instead is a `Log::warning` with the two user ids — never the address, never the password — matching `HasRetryPolicy::failed()`'s rule about what may reach a log line.
 
 ### Revoke tokens on deactivation, but not on demotion
 
@@ -123,13 +195,13 @@ The reason it is still needed after TM-10 shipped `EnsureUserIsActive`: that mid
 
 Signing someone out mid-task to fix a cosmetic menu entry is the wrong trade. **Revisit this if a later story starts caching abilities client-side** — that is the change that would make demotion a security event rather than a display one.
 
-### What an admin cannot do: set someone else's password
+### What the update endpoint still cannot do, and what `Password::defaults()` means today
 
-Acceptance criterion 3 lists name, email, role and `is_active`. It does not list the password, and this story follows it exactly: `POST /admin/users` takes an initial password (a login has to have one), and `PATCH /admin/users/{user}` **has no `password` field at all**.
+Acceptance criterion 3 lists name, email, role and `is_active`, and **`PATCH /admin/users/{user}` still has no `password` field** — that part of the original rule is unchanged and is now load-bearing, because the password lives at `PATCH /admin/users/{user}/password` instead. What is gone is the gap: an agent who forgets their password is helped from the Users screen, not from `php artisan tinker`.
 
-The consequence, stated plainly because it is a real gap somebody will hit: **an agent who forgets their password cannot be helped through the UI.** TM-14 is "Change my own password", which needs the old password, so it does not cover it either. No story in `tools/jira/backlog.json` owns admin-initiated password reset or email-based self-service reset — the `password_reset_tokens` table exists (created by the users migration) and nothing reads it. Until a story does, recovery is `php artisan tinker`. Do not quietly add a `password` field to the update endpoint to plug it; that is a story with its own decisions about notification and forced rotation.
+Email-based self-service reset is still owned by nobody. `password_reset_tokens` exists (created by the users migration) and nothing reads it.
 
-The create endpoint validates with `Password::defaults()`. Verified rather than assumed: with no `Password::defaults(...)` callback registered anywhere — `AppServiceProvider::boot()` is an empty stub until TM-9 adds its rate limiter — `Password::default()` returns `Password::min(8)` (`Password.php:166-173`). So today it means "at least 8 characters" and nothing else. Use it anyway: it puts the policy in one place (`AppServiceProvider::boot()`) for **TM-64**'s hardening pass to tighten, and every future password endpoint inherits the change.
+All three password endpoints — create, self-service change, and the amendment's admin reset — validate with `Password::defaults()`. Verified rather than assumed, and **re-verified today**: `AppServiceProvider::boot()` now holds three rate limiters and the `MessageSending` guard, and still **no `Password::defaults(...)` callback**, so `Password::default()` returns `Password::min(8)` (`Password.php:166-173`). So today it means "at least 8 characters" and nothing else. Use it anyway: it puts the policy in one place (`AppServiceProvider::boot()`) for **TM-64**'s hardening pass to tighten, and every future password endpoint inherits the change.
 
 ### The search box is a wildcard, and nobody escapes it
 
@@ -372,7 +444,7 @@ class UpdateUserRequest extends FormRequest
 ```
 
 - **`sometimes` + `required` on every field**, so `PATCH` semantics hold — an omitted key is left alone, but a key present and empty is an error rather than a silent blank-out.
-- **No `password`.** See "What an admin cannot do" above. Adding it here is a different story.
+- **No `password`, still.** The amendment did not add one here — it added `PATCH /admin/users/{user}/password` (task 17). This request must stay password-free: it is the endpoint the SPA calls with a diffed body, and a password key in a diffed body is a password sent by accident.
 - **The self-lockout rules are deliberately absent from this file.** They need a row lock a validator cannot hold — see task 5 and "The rule that needs a row lock".
 
 ### 5 — The controller
@@ -399,12 +471,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Administrative CRUD for staff accounts — minus the D.
+ * Administrative CRUD for staff accounts.
  *
- * There is no destroy action on purpose: ticket history has to keep a valid
- * author, and once TM-21 adds tickets with ON DELETE RESTRICT a delete that
- * worked today would start throwing a driver error. Deactivation is the only
- * removal, so it cannot be the road less travelled.
+ * Amended: destroy() exists (task 16). It is not a plain delete —
+ * tickets.created_by is ON DELETE RESTRICT, so a user who ever created a
+ * ticket cannot be removed until those rows have somewhere else to go. The
+ * endpoint refuses with a 422 naming the destination it needs, exactly as
+ * CategoryController::destroy does. Deactivation remains the ordinary answer;
+ * the screen, not the router, is where that preference is expressed.
  */
 class UserController extends Controller
 {
@@ -576,12 +650,14 @@ use App\Http\Controllers\Api\V1\Admin\UserController;
         Route::post('/users', [UserController::class, 'store'])->name('users.store');
         Route::get('/users/{user}', [UserController::class, 'show'])->name('users.show');
         Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
-        // No destroy route. Deactivation is the only removal — see the
-        // controller docblock.
+        // Added by the amendment — see task 18 for the shipped form, which
+        // also carries the throttle middleware TM-64 later made mandatory.
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+        Route::patch('/users/{user}/password', UserPasswordController::class)->name('users.password');
     });
 ```
 
-- **`Route::apiResource` is not used**, because it would generate a `destroy` route. `->except(['destroy'])` would work and then read as "we removed delete", which invites someone to put it back; four explicit lines read as "these are the four things you can do".
+- **`Route::apiResource` is not used.** It was originally rejected for generating a `destroy` route; now that destroy exists the reason changes rather than disappears — `apiResource` cannot express the per-route throttles (`write` on destroy, `password` on the reset) that `RateLimitCoverageTest` requires, and it would not generate the nested `/password` route at all. Explicit lines still read as "these are the things you can do".
 - **`PATCH`, not `PUT`.** Task 4's rules are all `sometimes`, which is partial-update semantics; `PUT` promises replacement and this endpoint does not do that.
 - **`{user}` is an implicit binding**, so a missing id is a `404` before the controller runs — and because `bootstrap/app.php:22-24` renders JSON for `api/*`, it is a JSON `404`, not an HTML error page.
 - **`->name('admin.')` on the group** gives `admin.users.index` and friends, which task 7's test and every backend test here address by name.
@@ -657,7 +733,11 @@ Table rows:
 | `POST` | `/api/v1/admin/users` | Create a staff account with an explicit role. | bearer + admin | TM-12 |
 | `GET` | `/api/v1/admin/users/{user}` | One staff account. | bearer + admin | TM-12 |
 | `PATCH` | `/api/v1/admin/users/{user}` | Edit name, email, role; toggle `is_active`. | bearer + admin | TM-12 |
+| `DELETE` | `/api/v1/admin/users/{user}` | Delete a staff account, reassigning their tickets. | bearer + admin | TM-12 |
+| `PATCH` | `/api/v1/admin/users/{user}/password` | Set another user's password. | bearer + admin | TM-12 |
 ````
+
+**Amendment:** the last two rows are task 19's, not task 8's — but they belong in the same table and the same format, so they are listed here to keep the contract's shape in one place. `ApiContractCoverageTest` parses these rows in **both directions**, so a row without a route fails just as loudly as a route without a row.
 
 The detail sections must state, field for field: the three `index` query parameters and that `per_page` is capped at **100** (default 15); that `search` matches `name` or `email` and that `%` and `_` are treated as **literal characters, not wildcards**; that `store` requires `role` and returns **`201`**; that `update` is partial and has **no `password` field**; that deactivating **revokes the user's tokens** while changing their role does not; that both self-lockout refusals are **`422`** with the message on `errors.is_active` or `errors.role`; that an agent gets **`403`** with `This action is unauthorized.`; and that **there is no `DELETE`**, with one sentence saying why.
 
@@ -976,6 +1056,439 @@ One component for both modes, because the fields are the same bar one:
 
 ---
 
+## Backend Tasks — Amendment (tasks 14–19)
+
+Everything below assumes tasks 1–13 have landed, which they have. Read the amendment banner at the top of this plan first: the four `ON DELETE` behaviours in that table are what task 16 is shaped around.
+
+### 14 — The policy grows two abilities
+
+**File: `backend/app/Policies/UserPolicy.php`**
+
+`delete()` currently returns `false` unconditionally. Replace it, and add a sibling:
+
+```php
+    /**
+     * Admin-only, and never yourself: deleting the account behind the request
+     * destroys the session performing it, and the "last active admin" rule
+     * needs a row lock, which a policy cannot hold — see UserController.
+     */
+    public function delete(User $user, User $target): bool
+    {
+        return $user->isAdmin() && ! $user->is($target);
+    }
+
+    /**
+     * Setting your OWN password goes through PATCH /auth/password, which
+     * requires the current one. This ability is only ever about someone else.
+     */
+    public function resetPassword(User $user, User $target): bool
+    {
+        return $user->isAdmin() && ! $user->is($target);
+    }
+```
+
+- **The self-check is a `403` here, not a `422`.** The update endpoint's self-lockout refusals are `422` because they are *field* refusals — the admin toggled a control and the message belongs under it. "You cannot delete yourself" is not about a field; there is no body. `403` from the policy is the honest status, and task 22 hides the control anyway.
+- **`$user->is($target)`, not an id comparison** — same reason task 5 gives: it compares the key *and* the class.
+- **The last-active-admin rule is not in the policy.** It needs `lockForUpdate()` inside the transaction that performs the delete. A policy runs before any transaction opens, which is precisely the read that races. Same argument, same conclusion as the original plan's "The rule that needs a row lock".
+
+**Edit `backend/tests/Feature/Policies/UserPolicyTest.php`.** `test_nobody_can_delete` (line 73) and the `$gate->denies('delete', $target)` assertion (line 93) both encode the old rule. **Rewrite them, do not delete them** — they become `test_an_admin_can_delete_another_user`, `test_an_admin_cannot_delete_themselves`, `test_an_agent_cannot_delete_anyone`, and the same three for `resetPassword`. A rewritten test that asserts the *new* rule is the record that the reversal was deliberate; a deleted one is indistinguishable from an oversight.
+
+### 15 — Two FormRequests
+
+**Create file: `backend/app/Http/Requests/Api/V1/Admin/DestroyUserRequest.php`**
+
+Modelled directly on `DestroyCategoryRequest`, which is the same problem one table over.
+
+```php
+<?php
+
+namespace App\Http\Requests\Api\V1\Admin;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+
+class DestroyUserRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return Gate::allows('delete', $this->route('user'));
+    }
+
+    /** @return array<string, list<mixed>|string> */
+    public function rules(): array
+    {
+        $user = $this->route('user');
+
+        return [
+            'reassign_to' => [
+                'sometimes',
+                'integer',
+                Rule::notIn([$user?->getKey()]),
+                Rule::exists('users', 'id')->where('is_active', true),
+            ],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'reassign_to.not_in' => 'Tickets cannot be reassigned to the account being deleted.',
+            'reassign_to.exists' => 'That user does not exist or is deactivated.',
+        ];
+    }
+}
+```
+
+- **`->where('is_active', true)`** — moving a departing agent's queue onto another deactivated account is the one destination guaranteed to be wrong. Role is deliberately *not* constrained: an admin is a legitimate destination.
+- **A `DELETE` with a body.** Legal in HTTP and already how `DELETE /categories/{category}` works in this codebase; axios sends it via `{ data: … }` (see `api/categories.ts:60-62`). Do not invent a query parameter for consistency with nothing.
+
+**Create file: `backend/app/Http/Requests/Api/V1/Admin/ResetUserPasswordRequest.php`**
+
+```php
+<?php
+
+namespace App\Http\Requests\Api\V1\Admin;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rules\Password;
+
+class ResetUserPasswordRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return Gate::allows('resetPassword', $this->route('user'));
+    }
+
+    /** @return array<string, list<mixed>|string> */
+    public function rules(): array
+    {
+        return [
+            // The ACTING admin's password, not the target's. current_password
+            // validates against the authenticated user, so this is re-auth:
+            // an unattended admin session cannot be turned into ownership of
+            // every account in the system with one click.
+            'current_password' => ['required', 'string', 'current_password:sanctum'],
+            // No `confirmed`: unlike PATCH /auth/password, a typo here locks
+            // out someone else and is fixed by repeating the reset. It is not
+            // the irrecoverable case that rule exists for.
+            'password' => ['required', 'string', Password::defaults()],
+        ];
+    }
+}
+```
+
+`current_password:sanctum` names the guard, matching `UpdatePasswordRequest`'s existing use of the rule — the default guard would be `web`, which this API does not use, and the rule would then always fail.
+
+### 16 — `UserController::destroy`, and one small refactor of the lockout guard
+
+**File: `backend/app/Http/Controllers/Api/V1/Admin/UserController.php`**
+
+First the refactor. `guardAgainstLockout` currently inlines the "how many other active admins are there" query; `destroy` needs the same count under the same lock but none of the field-message logic. Extract it:
+
+```php
+    /** Active admins other than this one, counted under a row lock. */
+    private function otherActiveAdmins(User $user): int
+    {
+        return User::query()
+            ->where('role', UserRole::Admin)
+            ->where('is_active', true)
+            ->whereKeyNot($user->getKey())
+            ->lockForUpdate()
+            ->count();
+    }
+```
+
+`guardAgainstLockout` then calls it instead of building the query itself. **Nothing about its behaviour changes** — but nothing currently proves that, because `UserLockoutTest` does not exist (see the amendment banner). **Write it first.** The seven tests are already specified in this plan's original Test Plan, item 4; they were never created, and a behaviour-preserving refactor with no test behind it is just an edit. Bringing them into existence is item 7a of the amendment's test plan and is the one piece of work here that is not optional.
+
+Then the action:
+
+```php
+    public function destroy(DestroyUserRequest $request, User $user, ActivityRecorder $recorder): Response|JsonResponse
+    {
+        $this->authorize('delete', $user);
+        $targetId = $request->has('reassign_to') ? $request->integer('reassign_to') : null;
+
+        return DB::transaction(function () use ($request, $user, $recorder, $targetId): Response|JsonResponse {
+            User::query()->whereKey($user->getKey())->lockForUpdate()->first();
+
+            // Deleting an agent can never empty the admin role; only check the
+            // count when it could. Self-deletion is already a 403 from the
+            // policy, so the only survivor here is the last-admin case.
+            if ($user->isAdmin() && $this->otherActiveAdmins($user) === 0) {
+                throw ValidationException::withMessages([
+                    'user' => 'This is the last active administrator. Promote someone else first.',
+                ]);
+            }
+
+            $ticketCount = $this->ticketCountFor($user);
+
+            if ($ticketCount > 0 && $targetId === null) {
+                return $this->reassignmentRequired($user, $ticketCount);
+            }
+
+            if ($ticketCount > 0) {
+                $this->reassignTickets($user, $targetId, $request->user()->getKey(), $recorder);
+            }
+
+            // No FK on personal_access_tokens (it is a morph), so nothing
+            // cascades — the rows would simply be orphaned.
+            $user->tokens()->delete();
+            $user->delete();
+
+            return response()->noContent();
+        });
+    }
+
+    /** Soft-deleted tickets still hold a live FK, hence withTrashed(). */
+    private function ticketCountFor(User $user): int
+    {
+        return Ticket::withTrashed()
+            ->where(fn ($query) => $query
+                ->where('created_by', $user->getKey())
+                ->orWhere('assigned_to', $user->getKey()))
+            ->count();
+    }
+
+    private function reassignmentRequired(User $user, int $ticketCount): JsonResponse
+    {
+        $options = User::query()->active()->whereKeyNot($user->getKey())->orderBy('name')->get();
+
+        $message = $options->isEmpty()
+            ? "This user still has {$ticketCount} tickets, and there is no other active account to move them to."
+            : "This user still has {$ticketCount} tickets. Choose who inherits them, then delete again.";
+
+        return response()->json([
+            'message' => $message,
+            'errors' => ['reassign_to' => [$message]],
+            'ticket_count' => $ticketCount,
+            'reassign_to_options' => UserResource::collection($options)->resolve(),
+        ], 422);
+    }
+
+    private function reassignTickets(User $user, int $targetId, int $actorId, ActivityRecorder $recorder): void
+    {
+        $target = User::query()->whereKey($targetId)->lockForUpdate()->firstOrFail();
+
+        $assignedIds = Ticket::withTrashed()->where('assigned_to', $user->getKey())->pluck('id')->all();
+        $authoredIds = Ticket::withTrashed()->where('created_by', $user->getKey())->pluck('id')->all();
+
+        Ticket::withTrashed()->whereIn('id', $assignedIds)->update(['assigned_to' => $target->getKey()]);
+        Ticket::withTrashed()->whereIn('id', $authoredIds)->update(['created_by' => $target->getKey()]);
+
+        $meta = ['reason' => 'user_deleted', 'from_name' => $user->name, 'to_name' => $target->name];
+
+        $recorder->recordMany($assignedIds, TicketActivityEvent::Assigned, [
+            'user_id' => $actorId, 'field' => 'assigned_to',
+            'old_value' => (string) $user->getKey(), 'new_value' => (string) $target->getKey(),
+            'meta' => $meta,
+        ]);
+
+        $recorder->recordMany($authoredIds, TicketActivityEvent::Updated, [
+            'user_id' => $actorId, 'field' => 'created_by',
+            'old_value' => (string) $user->getKey(), 'new_value' => (string) $target->getKey(),
+            'meta' => $meta,
+        ]);
+    }
+```
+
+New imports: `App\Enums\TicketActivityEvent`, `App\Models\Ticket`, `App\Services\ActivityRecorder`, `Illuminate\Http\Response`.
+
+Seven details that are not stylistic:
+
+- **The whole action is one transaction, and the guard reads under `lockForUpdate()`.** Two admins deleting each other simultaneously is the same race the update endpoint already guards; a delete makes it worse, because there is no row left to reactivate afterwards.
+- **`recordMany` is called inside the transaction**, which `ActivityRecorder` enforces by throwing `LogicException` outside one. Both calls are no-ops on an empty array, so the `$ticketCount > 0` branch does not need to distinguish "assigned but not authored".
+- **The activity rows are written before the delete**, while `$user->name` is still readable — that name in `meta.from_name` is the only place the deleted person survives in the trail.
+- **`->update()` on a query builder, not a loop of saves.** Two statements for a thousand tickets, and it deliberately does not fire model events — there is no notification owed to a requester because their ticket changed hands during an account deletion.
+- **`orderBy('name')` on the options list**, matching how the index endpoint sorts, so the dialog's select is in the same order as the table behind it.
+- **`Response|JsonResponse` return type.** `noContent()` is a `Response`, the `422` is a `JsonResponse`; `CategoryController::destroy` has the same union for the same reason.
+- **`$user->delete()` after the tickets move**, never before. If a future edit reorders these, MySQL says so with a `1451` rather than losing data — which is the one comfort `RESTRICT` buys.
+
+### 17 — `UserPasswordController`
+
+**Create file: `backend/app/Http/Controllers/Api/V1/Admin/UserPasswordController.php`**
+
+A single-action controller, matching `Auth\PasswordController` — which is the file to read first, because this one is its administrative twin.
+
+```php
+<?php
+
+namespace App\Http\Controllers\Api\V1\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\Admin\ResetUserPasswordRequest;
+use App\Models\User;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * An admin setting SOMEONE ELSE'S password. Your own goes through
+ * PATCH /auth/password, which asks for the current one.
+ */
+class UserPasswordController extends Controller
+{
+    public function __invoke(ResetUserPasswordRequest $request, User $user): Response
+    {
+        $this->authorize('resetPassword', $user);
+
+        DB::transaction(function () use ($request, $user): void {
+            $user->update(['password' => $request->validated('password')]);
+
+            // Every token, not "all but the current" — the current one belongs
+            // to the admin, not to the target. Someone whose password was just
+            // reset must sign in again with the new one, everywhere.
+            $user->tokens()->delete();
+        });
+
+        // Ids only. Never the address, never the password — the same rule
+        // HasRetryPolicy::failed() follows for notification failures.
+        Log::warning('An administrator reset a user password.', [
+            'actor_id' => $request->user()->getKey(),
+            'user_id' => $user->getKey(),
+        ]);
+
+        return response()->noContent();
+    }
+}
+```
+
+- **`update(['password' => …])` relies on the `hashed` cast** (`User::casts()`), exactly as `Auth\PasswordController` does. Do not call `Hash::make()` as well; double-hashing produces a password nobody can use and the login test that catches it is two stories away.
+- **`204`, no body.** There is nothing to return that the caller does not already have, and a body would be a place for a password to end up in a log.
+- **The log line sits outside the transaction**, so a rolled-back attempt does not claim a reset happened.
+
+### 18 — The routes, in their shipped form
+
+**File: `backend/routes/api.php`**
+
+Inside the existing `Route::middleware('admin')->prefix('admin')->name('admin.')` group — the same group tasks 6 and TM-33's `admin.workload` already live in:
+
+```php
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])
+            ->middleware('throttle:write')->name('users.destroy');
+        Route::patch('/users/{user}/password', UserPasswordController::class)
+            ->middleware('throttle:password')->name('users.password');
+```
+
+plus the import `use App\Http\Controllers\Api\V1\Admin\UserPasswordController;`.
+
+- **Two different throttles, deliberately.** `write` is 60/min; `password` is 6/min keyed by the acting admin's id (`AppServiceProvider::boot()`). Both are registered already — this task adds no limiter.
+- **`RateLimitCoverageTest` fails on a missing throttle**, so forgetting either is a red suite, not a silent gap. That test is the reason the middleware is written per-route here rather than on the group: the group also carries `GET` routes, which must not be throttled.
+- **Route order does not matter** between `/users/{user}` and `/users/{user}/password` — different segment counts, no shadowing. Registering the nested one first would also work; keep it after, so the file reads as CRUD-then-extras.
+
+### 19 — The two CI registries, and the contract
+
+**File: `backend/tests/Feature/Authorization/RouteAuthorizationTest.php`** — add two keys to the `ACCESS` constant:
+
+```php
+'admin.users.destroy' => 'admin', 'admin.users.password' => 'admin',
+```
+
+Without them `test_every_api_route_is_classified` fails. With them, four existing tests start covering the new routes for free, and all four pass by construction: an agent gets `403` (the `admin` middleware runs before model binding — `test_unknown_id_agent_forbidden_admin_not_found` is the existing proof), an admin hitting id `999999` gets `404` rather than `403`, and both routes carry all three middlewares.
+
+**File: `docs/api-contract.md`** — the two table rows from task 8, plus a detail section each. `ApiContractCoverageTest` enforces the rows; the prose is for humans and must state:
+
+- `DELETE /api/v1/admin/users/{user}` — optional `reassign_to` in the **body**; `204` on success; `422` on `errors.reassign_to` with `ticket_count` and `reassign_to_options` also in the body when the user still holds tickets; `422` on `errors.user` for the last active admin; `403` for self-deletion and for any agent; `404` for an unknown id. Say explicitly that **the target's tickets — both authored and assigned — move to `reassign_to`, and the move is written to each ticket's activity trail**, and that historical activity rows and `escalated_by` references keep their event and lose their actor.
+- `PATCH /api/v1/admin/users/{user}/password` — body is `current_password` (**the acting admin's own**) and `password`; `204` on success; `422` naming `current_password` when the admin's own password is wrong; `403` when the target is the acting admin, with the message pointing at `PATCH /auth/password`; **every one of the target's tokens is revoked**; rate limited at **6/min** rather than 60.
+
+Also amend the existing `PATCH /api/v1/admin/users/{user}` section: it still has no `password` field, and now it says where the password went.
+
+---
+
+## Frontend Tasks — Amendment (tasks 20–22)
+
+### 20 — The API module and the store
+
+**File: `frontend/src/api/users.ts`** — three additions, mirroring `api/categories.ts` line for line:
+
+```ts
+export interface UserDeleteBlocked {
+  ticket_count: number
+  reassign_to_options: AdminUser[]
+}
+
+export interface ResetPasswordPayload {
+  current_password: string
+  password: string
+}
+
+export async function deleteUser(id: number, reassignTo?: number): Promise<void> {
+  await client.delete(`/admin/users/${id}`, {
+    data: reassignTo === undefined ? undefined : { reassign_to: reassignTo },
+  })
+}
+
+export async function resetUserPassword(
+  id: number,
+  payload: ResetPasswordPayload,
+): Promise<void> {
+  await client.patch(`/admin/users/${id}/password`, payload)
+}
+
+/** The 422 that means "choose who inherits the tickets", or null. */
+export function deleteBlockedBy(error: unknown): UserDeleteBlocked | null {
+  // Same shape check as categories.ts:64 — a 422 carrying both keys.
+}
+```
+
+`deleteBlockedBy` is a **copy of the category one with a different element type**, not a generic extracted over both. Two call sites is not enough to justify the indirection, and the two payloads are free to diverge — the category version may grow a field this one never needs.
+
+**File: `frontend/src/stores/users.ts`** — two actions, both re-throwing for the same reason `create` and `update` do:
+
+```ts
+  async function remove(id: number, reassignTo?: number): Promise<void> {
+    await deleteUser(id, reassignTo)
+
+    // Deleting the only row on page 3 leaves you looking at an empty page 3.
+    if (users.value.length === 1 && page.value > 1) page.value -= 1
+
+    await load()
+  }
+
+  async function resetPassword(
+    id: number,
+    payload: ResetPasswordPayload,
+  ): Promise<void> {
+    await resetUserPassword(id, payload)
+    // No reload: nothing in the list changed.
+  }
+```
+
+The page step-back is the detail that gets skipped and then reported as a bug: without it, deleting the last row of the last page shows an empty table with working pagination controls, which reads as data loss.
+
+### 21 — `UserDeleteDialog.vue`
+
+**Create file: `frontend/src/components/UserDeleteDialog.vue`**
+
+`CategoryDeleteDialog.vue` is the template — same two-phase flow, same props shape, same `errorMessage` fallback:
+
+- **Props:** `user: AdminUser`, `blocked: UserDeleteBlocked | null`. `null` is the plain "are you sure?" confirmation; a value renders the reassignment picker with the ticket count and the eligible-user select.
+- **Two phases, one component.** The view calls `store.remove(id)` first; if `deleteBlockedBy()` returns a value, it opens this dialog with `blocked` set. The dialog then calls `store.remove(id, target)`. This is exactly the category flow, and it means the *unblocked* case never shows a picker for a choice that does not exist.
+- **The confirm button is disabled until a destination is chosen** when `blocked` is set, and the copy names the consequence in plain words: `{{ blocked.ticket_count }} tickets will move to the person you choose. Historical activity keeps its record but loses this person's name.` Do not soften that second sentence — it is the part an admin will not have thought about.
+- **`data-testid`s:** `user-delete`, `user-delete-count`, `user-delete-target`, `user-delete-confirm`, `user-delete-cancel`, `user-delete-error`.
+- **`errorMessage(reason)` for anything that is not the reassignment `422`** — including the last-admin `422`, whose `message` is already a readable sentence and passes through verbatim.
+
+### 22 — `UserPasswordDialog.vue`, and wiring both into the screen
+
+**Create file: `frontend/src/components/UserPasswordDialog.vue`**
+
+- **Props:** `user: AdminUser`. **Emits:** `saved`, `close`.
+- **Two fields, in this order:** the new password for `user.name`, then **your own password** — labelled so nobody types the target's. Getting that order wrong is the single most likely support ticket this dialog will generate.
+- **Field errors from `validationErrors(caughtError)`**, keyed `password` and `current_password`; the `403` for a self-reset renders form-level via `errorMessage`, though the screen should never offer the control for your own row.
+- **On success, emit `saved` and let the view show a short confirmation naming the consequence:** the user was signed out of every device and must sign in with the new password. The API returns `204`, so the dialog has nothing to render from the response — the copy is the whole feedback.
+- **`data-testid`s:** `user-password-form`, `user-password-new`, `user-password-current`, `user-password-submit`, `user-password-cancel`, `user-password-error`, `user-password-error-password`, `user-password-error-current_password`.
+- **A positioned `<div>`, not `<dialog>`** — same reason task 13 gives: `jsdom` does not implement `showModal()`.
+
+**File: `frontend/src/views/AdminUsersView.vue`** — the row-actions cell currently holds one `Edit` button (around line 216). It grows to three, and the two new ones are **absent, not disabled, on the signed-in admin's own row** — `auth.user?.id === user.id`. Disabled would be defensible; absent is better here, because both actions are irreversible and a greyed-out Delete on your own row is an invitation to wonder how to enable it.
+
+- New testids: `users-reset-password` and `users-delete` per row, plus `users-delete-dialog` / `users-password-dialog` on the mounted components.
+- **The view owns the two-phase delete:** call `store.remove(user.id)`, catch, run `deleteBlockedBy(reason)`, and either open the dialog with the blocked payload or surface `errorMessage(reason)` in the existing `users-error` region.
+- **No route changes, no store-side role checks.** Same rule as task 12: the guard, the middleware and the policy have all already answered that question.
+
+---
+
 ## Edge Cases & Failure Modes
 
 - **`role` silently dropped on create.** `User::create($request->validated())` or `new User([... 'role' => ...])` discards `role` without error, because it is not in `#[Fillable]` (`User.php:14`) and nothing calls `Model::preventSilentlyDiscardingAttributes()` — `AppServiceProvider` holds only TM-9's rate limiter. Every new account comes out an **agent**, the endpoint returns `201`, and the response body shows the correct role only if you re-read it from the response rather than the input. Task 5 assigns it explicitly, `AdminUserSeeder.php:31` is the precedent, and the test plan asserts a created admin is an admin **after a reload from the database**.
@@ -998,6 +1511,26 @@ One component for both modes, because the fields are the same bar one:
 - **`per_page` changed while on a high page.** Not exposed in the UI, and the store always resets to page 1 on a filter change — but `?page=99` typed by hand returns an empty `data` with `meta.last_page` well below it. Task 12's empty state covers the render; nothing crashes.
 - **No way to reset a forgotten password.** Real gap, stated in Product rules, owned by no story. `password_reset_tokens` exists and nothing reads it. Recovery today is `php artisan tinker`. Do not plug it by adding `password` to `UpdateUserRequest`.
 - **`npm run lint` after adding a spec.** `tsconfig.app.json` sets `noUnusedLocals` and `noUnusedParameters`, so an unused import in a spec fails `npm run typecheck` and `npm run build` while `vitest` still passes. And Prettier is now a gate: `npm run format:check` fails on formatting alone. Run `npm run format && npm run lint && npm run typecheck && npm run test`.
+
+**Added by the amendment — password reset and delete:**
+
+- **Deleting a user who ever created a ticket, without moving the rows.** `tickets.created_by` is `ON DELETE RESTRICT`, so MySQL throws `SQLSTATE[23000] … errno 1451` and the admin sees a **`500`** from a button they were invited to press. This is the single most likely way to get the delete wrong, and the `422`-with-`reassign_to` flow exists entirely to prevent it. A test deletes a user with tickets and asserts `422`, not `500`.
+- **Counting tickets without `withTrashed()`.** `Ticket` uses `SoftDeletes`, so a soft-deleted ticket is invisible to a plain count and **still holds a live foreign key**. Count clean, delete, `1451`, `500` — from a code path whose tests all passed, because no test soft-deleted a ticket first. One test does exactly that.
+- **Letting `assigned_to` null itself.** The FK is `SET NULL`, so a delete that ignores assignment "works": the agent vanishes and a dozen live tickets quietly become unassigned with nothing in the timeline. The queue looks healthy. Reassignment is explicit and audited for this reason, and a test asserts the inherited tickets have the new assignee **and** an `assigned` activity row carrying `meta.reason = 'user_deleted'`.
+- **Reassigning to a deactivated user.** `Rule::exists('users','id')->where('is_active', true)` refuses it. Without the `where`, an admin cleaning house can move a departing agent's entire queue onto another departing agent.
+- **Reassigning to the user being deleted.** `Rule::notIn([$user->getKey()])` refuses it; without it the update runs, the FK is satisfied for exactly as long as the transaction takes, and the delete then fails on rows it just wrote.
+- **Deleting the last active administrator.** Same race as deactivating them, with no undo — there is no row left to reactivate. Checked under `lockForUpdate()` inside the delete transaction, `422` on `errors.user`. The negative control matters as much as the positive: a second admin *can* be deleted while a third remains.
+- **Deleting yourself.** `403` from `UserPolicy::delete`, which is also why the button is absent from your own row. Note the ordering — the policy answers before any transaction opens, so the self case never reaches the lock.
+- **Orphaned tokens.** `personal_access_tokens` is a morph with **no foreign key**, so deleting a user leaves their token rows behind. They cannot authenticate (the tokenable resolves to `null`) but they are litter, and litter in that table is the kind of thing a later audit reads as a live session. `$user->tokens()->delete()` before `$user->delete()`.
+- **Double-hashing an admin-set password.** `User::casts()` maps `password` to `hashed`, so `Hash::make()` *plus* the cast produces a hash of a hash — the reset returns `204`, and the user can never sign in. The failure surfaces at a login, far from the change that caused it. A test signs in with the new password after the reset rather than only asserting the `204`.
+- **Not revoking the target's tokens on a password reset.** The account whose password was just changed — possibly because it was compromised — keeps every live session it had. `$user->tokens()->delete()`, all of them, and a test replays the old token and asserts `401`.
+- **Revoking the *admin's* token by copying `Auth\PasswordController`.** That controller keeps the current token deliberately, because the user is changing their own password. Copying its `revokeOtherTokens()` here revokes the target's tokens *except one arbitrary one* and would sign nobody out correctly. Delete all of the target's; touch none of the actor's.
+- **`current_password` without the `:sanctum` guard.** The rule defaults to the `web` guard, which this API never populates, so the check fails for a correct password and the endpoint is unusable. `UpdatePasswordRequest` already names the guard; copy that, not the documentation's default example.
+- **The password in a log line, a response body, or an error.** None of the three. The log carries two ids. `HasRetryPolicy::failed()` is the in-repo precedent for what is allowed to reach a log.
+- **The user is never told their password changed.** Deliberate and unowned — the app has the queued event → listener → notification chain to carry it, and no story asks for it. Recorded here so it is a decision rather than an omission. It also means an admin resetting a password out of suspicion gives the account holder no signal at all.
+- **A timeline entry whose actor was deleted.** `ticket_activities.user_id` is `SET NULL`, so historical rows keep the event and lose the name. The frontend already renders actor-less rows (system `stale` events have always had `user_id = null`), which is why this is a verification step rather than a task — but check it rather than assuming it.
+- **Deleting the last row on a page.** Without the store's page step-back, the table is empty, the pagination controls still work, and it reads as data loss.
+- **The two CI registries.** A new route that is not in `RouteAuthorizationTest::ACCESS` fails `test_every_api_route_is_classified`; a new route with no `docs/api-contract.md` row fails `ApiContractCoverageTest` — and a documented row whose route was renamed fails it from the other direction. Neither failure looks like it is about the feature.
 
 ---
 
@@ -1078,6 +1611,44 @@ Every test signs in with a real token, the way TM-10's plan requires — `Sanctu
 
 Backend total added: **45 tests** (11 + 10 + 10 + 7 + 6 + 1), taking the suite from 58 to **103**.
 
+**Amendment — password reset and delete.** These land on top of whatever the suite measures today, not on top of 103; the tree has moved well past this plan. Measure first.
+
+7a. **Create `backend/tests/Feature/Admin/UserLockoutTest.php` first — it does not exist.** The seven tests are specified verbatim in item 4 of the original Test Plan above and were never written; the guard they describe is running in production code today with no coverage. They must be green **before** task 16's extraction of `otherActiveAdmins()`, because that extraction is the only change in this amendment that touches already-shipped behaviour.
+
+8. **Create `backend/tests/Feature/Admin/UserDestroyTest.php`** — `RefreshDatabase`. Thirteen tests:
+   - `test_it_deletes_a_user_with_no_tickets` — `204`, and the row is gone.
+   - `test_it_revokes_tokens_before_deleting` — the target holds a real token; after the `204`, `personal_access_tokens` holds none for that id. Catches the missing `tokens()->delete()`, which no other assertion would.
+   - `test_it_refuses_to_delete_a_user_who_has_tickets` — `422` on `errors.reassign_to`, with `ticket_count` and a non-empty `reassign_to_options` in the body, **and the user still exists**. The `500`-instead-of-`422` test.
+   - `test_it_counts_soft_deleted_tickets` — the user's only ticket is soft-deleted; the delete is still refused. Without `withTrashed()` this returns `204` and then `1451`.
+   - `test_it_reassigns_authored_and_assigned_tickets` — one authored, one assigned, one both; after `reassign_to`, all three point at the destination and the deleted row is gone.
+   - `test_it_records_the_reassignment_on_the_activity_trail` — an `assigned` row for the assigned ticket and an `updated` row with `field = created_by` for the authored one, both carrying `meta.reason = 'user_deleted'` and the deleted user's name in `meta.from_name`.
+   - `test_it_rejects_reassigning_to_an_inactive_user` and `test_it_rejects_reassigning_to_the_user_being_deleted` — `422` on `errors.reassign_to`, user intact.
+   - `test_an_admin_cannot_delete_themselves` — `403`, row intact.
+   - `test_the_last_active_admin_cannot_be_deleted` — `422` on `errors.user`.
+   - `test_a_second_admin_can_be_deleted_when_a_third_remains` — the negative control, without which a guard that refused every delete would pass everything above.
+   - `test_an_agent_cannot_delete_anyone` — `403`, `User::count()` unchanged.
+   - `test_it_returns_404_for_an_unknown_user`.
+
+9. **Create `backend/tests/Feature/Admin/UserPasswordResetTest.php`** — `RefreshDatabase`. Ten tests:
+   - `test_an_admin_can_set_another_users_password` — `204`, and then **a real login with the new password succeeds**. Asserting only the `204` passes against a double-hash.
+   - `test_the_old_password_no_longer_works` — `422`/`401` from `POST /auth/login` with the previous password.
+   - `test_it_revokes_every_token_the_target_holds` — two tokens before, zero after, and a replay of one against `/auth/me` is a `401`.
+   - `test_it_does_not_revoke_the_acting_admins_token` — the admin's own session still works afterwards. Pins the difference from `Auth\PasswordController`.
+   - `test_it_requires_the_acting_admins_current_password` — omitted → `422` on `current_password`; **wrong** → `422` on `current_password`, and the target's password is unchanged.
+   - `test_it_rejects_a_short_password` — `422`, pinning `Password::defaults()`.
+   - `test_an_admin_cannot_reset_their_own_password_here` — `403`, pointing at `/auth/password`.
+   - `test_an_agent_cannot_reset_anyones_password` — `403`.
+   - `test_it_is_rate_limited_at_six_per_minute` — the seventh call in a minute is `429` with `Retry-After`. Modelled on `PasswordThrottleTest`, which already does this for the self-service endpoint.
+   - `test_it_returns_404_for_an_unknown_user`.
+
+10. **Edit `backend/tests/Feature/Policies/UserPolicyTest.php`** — task 14. `test_nobody_can_delete` and the `denies('delete', …)` assertion are rewritten into six: delete and `resetPassword`, each for an admin acting on someone else (allowed), on themselves (denied), and for an agent (denied).
+
+11. **Edit `backend/tests/Feature/Authorization/RouteAuthorizationTest.php`** — two `ACCESS` entries, no new test methods. Four existing tests then cover the new routes.
+
+12. **`tests/Feature/Security/RateLimitCoverageTest.php` and `tests/Feature/Documentation/ApiContractCoverageTest.php` are not edited** — they must pass because tasks 18 and 19 did their jobs. If either fails, the fix is in the route file or the contract, never in the test.
+
+**Amendment backend total: 23 new tests**, plus the **7** pre-existing-behaviour tests item 7a resurrects, plus six rewritten policy assertions — **30 in all**.
+
 ### Frontend
 
 `npm run test` from `frontend/`. Baseline measured today: **11 tests across 3 files**, plus TM-11's 42 → **53**. Match `src/stores/health.spec.ts` and `src/views/HealthView.spec.ts` **as Prettier now formats them** — one statement per line, no semicolons, single quotes.
@@ -1137,6 +1708,18 @@ Backend total added: **45 tests** (11 + 10 + 10 + 7 + 6 + 1), taking the suite f
 Frontend total added: **44 tests** (9 + 6 + 11 + 9 + 9), taking the suite from 53 to **97**.
 
 **Combined: 89 new tests.**
+
+**Amendment — frontend.** Measure the current suite first; these are additions to it.
+
+15. **Edit `frontend/src/api/users.spec.ts`** — five tests: `deleteUser` sends `DELETE` to `/admin/users/{id}` with **no body** when no destination is given and with `{ reassign_to }` when one is; `resetUserPassword` sends `PATCH` to `/admin/users/{id}/password` with both fields; `deleteBlockedBy` returns the payload for a `422` carrying `ticket_count` and `reassign_to_options`, and **`null`** for a `422` without them (the last-admin refusal) and for a `403`.
+16. **Edit `frontend/src/stores/users.spec.ts`** — five tests: `remove` calls the API and reloads; `remove` passes the destination through; `remove` steps back a page when it deleted the only row of a page above the first; `remove` re-throws so the view can inspect the `422`; `resetPassword` calls the API and **does not** reload.
+17. **Create `frontend/src/components/UserDeleteDialog.spec.ts`** — six tests: renders the ticket count and the destination select when `blocked` is set; the confirm button is disabled until a destination is chosen; a plain confirmation with no select when `blocked` is `null`; confirm calls `store.remove` with the chosen id; a failure renders `user-delete-error` via `errorMessage`; cancel emits `close` without calling the store.
+18. **Create `frontend/src/components/UserPasswordDialog.spec.ts`** — six tests: submits both fields; a `422` on `current_password` renders under **that** input, not the new-password one; a `422` on `password` renders under the new-password input; a `403` renders form-level; `saved` is emitted on success; the fields are empty on mount and are not pre-filled from anything.
+19. **Create or extend `frontend/src/views/AdminUsersView.spec.ts`** — four tests: every other row has `users-reset-password` and `users-delete`; **the signed-in admin's own row has neither**; a delete that comes back blocked opens `users-delete-dialog` with the count from the payload; a delete that fails for any other reason renders in `users-error` instead of opening the dialog.
+
+**Amendment frontend total: 26 new tests.**
+
+**Amendment combined: 49 new tests.**
 
 ---
 
@@ -1201,6 +1784,38 @@ Run in this order. The working directory is stated for every command.
 20. **Contract matches the code:** read `docs/api-contract.md`'s four new sections against the real responses from steps 5–14, field for field, including the `tickets_count` deferral note.
 21. **Regression:** repo root — `git status --short` shows no change to `docker-compose.yml`, `README.md`, `CLAUDE.md`, `docs/erd.md`, `backend/composer.json`, `backend/composer.lock`, `backend/phpunit.xml`, `backend/config/*`, `frontend/package.json`, `frontend/package-lock.json`, `frontend/vite.config.ts`, `frontend/tsconfig*.json` or `frontend/src/router/index.ts`.
 
+**Amendment — password reset and delete.** Run these after step 21, then re-run step 21 last so the regression check covers everything. `$TOKEN` is the admin token from step 5.
+
+22. **The routes are wired, gated and throttled:** `backend/` —
+
+    ```bash
+    php artisan route:list --path=admin/users --columns=method,uri,name,middleware
+    ```
+
+    Six rows now. The `DELETE` row carries `auth:sanctum`, `active`, `admin` and **`throttle:write`**; the `PATCH …/password` row carries the same three plus **`throttle:password`**. A `throttle:write` on the password route means the tighter limiter was not applied and `composer test` will still pass — this is the check that catches it.
+
+23. **A clean delete:** create a throwaway agent through `POST /admin/users`, then `DELETE /api/v1/admin/users/{id}` with the admin token. **`204`**, and `php artisan tinker --execute="echo App\Models\User::find({id}) === null ? 'gone' : 'still here', PHP_EOL;"` prints `gone`.
+
+24. **A blocked delete:** `php artisan db:seed --class=DemoSeeder` (or create a ticket as the agent), then delete an agent who owns tickets. **`422`**, and the body carries `errors.reassign_to`, a non-zero `ticket_count` and a non-empty `reassign_to_options`. **Not a `500`** — a `500` here means the reassignment guard is missing and MySQL refused the delete itself.
+
+25. **A reassigned delete:** repeat with `-d '{"reassign_to": <other id>}'`. **`204`**, and then:
+
+    ```bash
+    php artisan tinker --execute="echo App\Models\Ticket::withTrashed()->where('assigned_to', <other id>)->count(), PHP_EOL;"
+    ```
+
+    counts the inherited tickets. Open one of them in the SPA: the timeline's newest entry is an assignment naming the admin who ran the delete, and the entry's detail carries the deleted person's name.
+
+26. **The last admin is safe:** with exactly one active admin, `DELETE` their own id → **`403`** (self), and from a second admin's session with the first deactivated → **`422`** on `errors.user`. Restore with `php artisan migrate:fresh --seed`.
+
+27. **A deleted actor's history still renders:** open a ticket whose earlier activity was performed by the account deleted in step 25. The timeline entry is still there, with its event and its timestamp, and it renders **without printing `null` or `undefined`** where the actor's name would be. This is the one consequence of `ON DELETE SET NULL` a user can actually see.
+
+28. **The password reset works end to end:** as the admin, `PATCH /api/v1/admin/users/{agent}/password` with `{"current_password":"password","password":"new-password-123"}`. **`204`**. Then log in **as that agent** with `new-password-123` → `200` with a token; with the old password → `422`. If the `204` came back but the login fails, the password was double-hashed.
+
+29. **The reset revokes and re-authenticates:** mint an agent token first, run the reset, then replay that token against `/api/v1/auth/me` → **`401`**. The admin's own token still returns `200` from `/auth/me` in the same breath. Send the reset again with a wrong `current_password` → **`422`** on `current_password`, and the agent's password is unchanged (log in again to prove it). Send it against the admin's own id → **`403`**.
+
+30. **The screen:** at **http://localhost:5173/admin/users**, every row but your own shows Edit, Reset password and Delete; **your own row shows only Edit**. Delete an agent with tickets — the dialog names the count and refuses to confirm until you pick who inherits them. Reset another user's password — two fields, the second labelled as *your* password, and a wrong entry renders under that field rather than as a banner.
+
 ---
 
 ## Done Criteria
@@ -1226,5 +1841,23 @@ Run in this order. The working directory is stated for every command.
 - [ ] **Acceptance criterion 1's ticket count is explicitly not shipped**, the plan's four-step diff for TM-21 is recorded in `00-overview.md`, and no column of zeros was added in its place.
 - [ ] No new dependency on either side; `backend/config/*`, `phpunit.xml`, `docs/erd.md` and `CLAUDE.md` untouched.
 - [ ] `00-overview.md` updated with this story, the ticket-count deferral, the lockout-race finding, and the note that **TM-13 refines this story's middleware rather than replacing it**.
+
+**Added by the amendment — tasks 14–22:**
+
+- [ ] `UserPolicy::delete` and a new `UserPolicy::resetPassword` both return `$user->isAdmin() && ! $user->is($target)`, and `UserPolicyTest`'s `test_nobody_can_delete` has been **rewritten** into the six tests that assert the new rule rather than deleted.
+- [ ] `DELETE /api/v1/admin/users/{user}` returns **`204`** for a user with no tickets, having revoked their tokens first; **`422`** on `errors.reassign_to` — with `ticket_count` and `reassign_to_options` in the same body — for a user who still holds tickets; **`422`** on `errors.user` for the last active admin, checked under `lockForUpdate()`; and **`403`** for self-deletion and for any agent.
+- [ ] Ticket counting and reassignment both use **`withTrashed()`**, pinned by a test whose only ticket is soft-deleted — the case that otherwise returns `204` and then a driver-level `1451`.
+- [ ] Reassignment moves **both** `created_by` and `assigned_to` to the chosen active user and writes it to the audit trail: an `assigned` row per assigned ticket and an `updated` row with `field = created_by` per authored one, each carrying `meta.reason = 'user_deleted'` and the deleted person's name. **No new `TicketActivityEvent` case**, so `ActivityCoverageTest` is untouched.
+- [ ] `escalated_by` and `ticket_activities.user_id` are left to `ON DELETE SET NULL`, and a verification step confirms the timeline still renders an actor-less entry without printing `null`.
+- [ ] `PATCH /api/v1/admin/users/{user}/password` requires the **acting admin's own** password via `current_password:sanctum`, sets the target's password through the `hashed` cast (never `Hash::make()` as well), revokes **every** token the target holds and none of the actor's, returns **`204`**, and logs two user ids — no address, no password.
+- [ ] The reset is refused for your own account (`403`, pointing at `PATCH /auth/password`) and carries **`throttle:password`** (6/min), while the delete carries `throttle:write` (60/min) — verified in `route:list`, not only in the suite.
+- [ ] `PATCH /api/v1/admin/users/{user}` **still has no `password` field**, and `UpdateUserRequest` is unchanged by this amendment.
+- [ ] `RouteAuthorizationTest::ACCESS` classifies `admin.users.destroy` and `admin.users.password` as `admin`; `docs/api-contract.md` has a row and a detail section for each, including where the password went and what a delete does to the audit trail. `ApiContractCoverageTest` and `RateLimitCoverageTest` pass **without being edited**.
+- [ ] `frontend/src/api/users.ts` exports `deleteUser`, `resetUserPassword` and `deleteBlockedBy`; the store's `remove` steps back a page when it deleted the only row of a page above the first, and `resetPassword` does **not** reload the list.
+- [ ] `UserDeleteDialog.vue` follows `CategoryDeleteDialog.vue`'s two-phase flow — plain confirmation when nothing blocks, ticket count plus destination picker when something does — and states plainly that historical activity keeps its record but loses the person's name.
+- [ ] `UserPasswordDialog.vue` asks for the new password and then **your own**, in that order and labelled unambiguously, and renders a `current_password` error under that field rather than as a banner.
+- [ ] `AdminUsersView.vue` shows Reset password and Delete on every row **except the signed-in admin's own**, where both are absent rather than disabled; the view owns the two-phase delete and routes any non-reassignment failure to the existing `users-error` region.
+- [ ] `composer test` and `npm run test` exit `0` with **23** and **26** new tests on top of the measured baseline; `composer lint`, `npm run lint`, `npm run typecheck` and `npm run format:check` all exit `0`.
+- [ ] Emailing the user that their password was changed is recorded as an owned-by-nobody gap in Edge Cases and **was not smuggled in**; neither was soft-deleting users, nor a `password` field on the update endpoint.
 
 **STOP HERE. Report to the user and wait for confirmation before proceeding to Story 11 (TM-13).**

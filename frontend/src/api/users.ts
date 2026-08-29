@@ -1,4 +1,5 @@
 import client from './client'
+import axios from 'axios'
 import type { UserRole } from './auth'
 import type { Paginated } from './pagination'
 export interface AdminUser {
@@ -27,6 +28,16 @@ export interface CreateUserPayload {
 export type UpdateUserPayload = Partial<
   Pick<AdminUser, 'name' | 'email' | 'role' | 'is_active'>
 >
+export interface UserDeleteBlocked {
+  message: string
+  ticket_count: number
+  reassign_to_options: AdminUser[]
+}
+export interface ResetPasswordPayload {
+  /** The acting admin's own password, not the target's. */
+  current_password: string
+  password: string
+}
 export async function listUsers(
   query: UserListQuery = {},
 ): Promise<Paginated<AdminUser>> {
@@ -53,4 +64,36 @@ export async function updateUser(
     payload,
   )
   return data.data
+}
+export async function deleteUser(
+  id: number,
+  reassignTo?: number,
+): Promise<void> {
+  await client.delete(`/admin/users/${id}`, {
+    data: reassignTo === undefined ? undefined : { reassign_to: reassignTo },
+  })
+}
+export async function resetUserPassword(
+  id: number,
+  payload: ResetPasswordPayload,
+): Promise<void> {
+  await client.patch(`/admin/users/${id}/password`, payload)
+}
+/**
+ * The 422 that means "choose who inherits the tickets", or null for every
+ * other failure — including the last-admin 422, which carries neither key.
+ */
+export function deleteBlockedBy(error: unknown): UserDeleteBlocked | null {
+  if (!axios.isAxiosError(error) || error.response?.status !== 422) return null
+  const payload = error.response.data as Partial<UserDeleteBlocked> | undefined
+  if (
+    typeof payload?.ticket_count !== 'number' ||
+    !Array.isArray(payload.reassign_to_options)
+  )
+    return null
+  return {
+    message: payload.message ?? '',
+    ticket_count: payload.ticket_count,
+    reassign_to_options: payload.reassign_to_options,
+  }
 }

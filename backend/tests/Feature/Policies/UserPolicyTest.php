@@ -70,9 +70,36 @@ class UserPolicyTest extends TestCase
         $this->assertFalse((new UserPolicy)->update($agent, $agent));
     }
 
-    public function test_nobody_can_delete(): void
+    public function test_admin_can_delete_another_user(): void
     {
-        $this->assertFalse((new UserPolicy)->delete(User::factory()->admin()->create(), User::factory()->agent()->create()));
+        $this->assertTrue((new UserPolicy)->delete(User::factory()->admin()->create(), User::factory()->agent()->create()));
+    }
+
+    public function test_admin_cannot_delete_self(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->assertFalse((new UserPolicy)->delete($admin, $admin->fresh()));
+    }
+
+    public function test_agent_cannot_delete(): void
+    {
+        $this->assertFalse((new UserPolicy)->delete(User::factory()->agent()->create(), User::factory()->agent()->create()));
+    }
+
+    public function test_admin_can_reset_another_users_password(): void
+    {
+        $this->assertTrue((new UserPolicy)->resetPassword(User::factory()->admin()->create(), User::factory()->agent()->create()));
+    }
+
+    public function test_admin_cannot_reset_own_password_through_this_ability(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->assertFalse((new UserPolicy)->resetPassword($admin, $admin->fresh()));
+    }
+
+    public function test_agent_cannot_reset_anyones_password(): void
+    {
+        $this->assertFalse((new UserPolicy)->resetPassword(User::factory()->agent()->create(), User::factory()->agent()->create()));
     }
 
     public function test_deactivated_admin_keeps_policy_access(): void
@@ -90,6 +117,9 @@ class UserPolicyTest extends TestCase
         $this->assertTrue($gate->allows('create', User::class));
         $this->assertTrue($gate->allows('view', $target));
         $this->assertTrue($gate->allows('update', $target));
-        $this->assertTrue($gate->denies('delete', $target));
+        $this->assertTrue($gate->allows('delete', $target));
+        $this->assertTrue($gate->allows('resetPassword', $target));
+        $this->assertTrue($gate->denies('delete', $admin));
+        $this->assertTrue($gate->denies('resetPassword', $admin));
     }
 }
