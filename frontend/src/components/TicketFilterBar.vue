@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/auth'
 import { useMasterDataStore } from '../stores/masterData'
 import { useTicketsStore } from '../stores/tickets'
 import { useUsersStore } from '../stores/users'
+import { readableTextColor } from '../lib/color'
 import type { TicketDirection, TicketSort } from '../api/tickets'
 
 const auth = useAuthStore()
@@ -43,6 +44,22 @@ function changeDirection(event: Event): void {
     tickets.sort,
     (event.target as HTMLSelectElement).value as TicketDirection,
   )
+}
+
+/** Toggle an id in/out of a filter array and re-fetch */
+function toggleFilter(arr: number[], id: number): void {
+  const idx = arr.indexOf(id)
+  if (idx === -1) {
+    arr.push(id)
+  } else {
+    arr.splice(idx, 1)
+  }
+  apply()
+}
+
+/** Convenience wrapper so the template can call it without explicit import */
+function getTextColor(hex: string): string {
+  return readableTextColor(hex)
 }
 
 onMounted(() => {
@@ -88,81 +105,124 @@ onMounted(() => {
       </div>
 
       <!-- Filters Row -->
-      <div class="flex flex-wrap items-center gap-3">
-        <!-- Status Filter -->
-        <div class="flex flex-col gap-1">
-          <label
-            class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
+      <div class="flex flex-wrap items-start gap-x-6 gap-y-3">
+        <!-- Status Filter — toggle pill chips -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
             >Status</label
           >
-          <select
-            v-model.number="tickets.statusIds"
-            multiple
-            data-testid="filter-status"
-            @change="apply"
-            class="h-20 min-w-32 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 shadow-2xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          >
-            <option
+          <div data-testid="filter-status" class="flex flex-wrap gap-1.5">
+            <button
               v-for="status in masterData.statuses"
               :key="status.id"
-              :value="status.id"
-              class="rounded-md py-0.5"
+              type="button"
+              @click="toggleFilter(tickets.statusIds, status.id)"
+              :aria-pressed="tickets.statusIds.includes(status.id)"
+              class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all select-none"
+              :class="
+                tickets.statusIds.includes(status.id)
+                  ? 'border-transparent shadow-sm ring-2 ring-offset-1'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+              "
+              :style="
+                tickets.statusIds.includes(status.id)
+                  ? {
+                      backgroundColor: status.color,
+                      color: getTextColor(status.color),
+                      '--tw-ring-color': status.color + '55',
+                    }
+                  : {}
+              "
             >
+              <span
+                class="h-1.5 w-1.5 shrink-0 rounded-full"
+                :style="{
+                  backgroundColor: tickets.statusIds.includes(status.id)
+                    ? getTextColor(status.color)
+                    : status.color,
+                }"
+              />
               {{ status.name }}
-            </option>
-          </select>
+            </button>
+          </div>
         </div>
 
-        <!-- Priority Filter -->
-        <div class="flex flex-col gap-1">
-          <label
-            class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
+        <!-- Priority Filter — toggle pill chips -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
             >Priority</label
           >
-          <select
-            v-model.number="tickets.priorityIds"
-            multiple
-            data-testid="filter-priority"
-            @change="apply"
-            class="h-20 min-w-32 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 shadow-2xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          >
-            <option
+          <div data-testid="filter-priority" class="flex flex-wrap gap-1.5">
+            <button
               v-for="priority in masterData.priorities"
               :key="priority.id"
-              :value="priority.id"
-              class="rounded-md py-0.5"
+              type="button"
+              @click="toggleFilter(tickets.priorityIds, priority.id)"
+              :aria-pressed="tickets.priorityIds.includes(priority.id)"
+              class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all select-none"
+              :class="
+                tickets.priorityIds.includes(priority.id)
+                  ? 'border-transparent shadow-sm ring-2 ring-offset-1'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+              "
+              :style="
+                tickets.priorityIds.includes(priority.id)
+                  ? {
+                      backgroundColor: priority.color,
+                      color: getTextColor(priority.color),
+                      '--tw-ring-color': priority.color + '55',
+                    }
+                  : {}
+              "
             >
+              <span
+                class="h-1.5 w-1.5 shrink-0 rounded-full"
+                :style="{
+                  backgroundColor: tickets.priorityIds.includes(priority.id)
+                    ? getTextColor(priority.color)
+                    : priority.color,
+                }"
+              />
               {{ priority.name }}
-            </option>
-          </select>
+            </button>
+          </div>
         </div>
 
-        <!-- Category Filter -->
-        <div class="flex flex-col gap-1">
-          <label
-            class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
+        <!-- Category Filter — toggle pill chips -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
             >Category</label
           >
-          <select
-            v-model.number="tickets.categoryIds"
-            multiple
-            data-testid="filter-category"
-            @change="apply"
-            class="h-20 min-w-32 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 shadow-2xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          >
-            <option
+          <div data-testid="filter-category" class="flex flex-wrap gap-1.5">
+            <button
               v-for="category in masterData.categories"
               :key="category.id"
-              :value="category.id"
-              class="rounded-md py-0.5"
+              type="button"
+              @click="toggleFilter(tickets.categoryIds, category.id)"
+              :aria-pressed="tickets.categoryIds.includes(category.id)"
+              class="inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium tracking-tight transition-all select-none"
+              :class="
+                tickets.categoryIds.includes(category.id)
+                  ? 'border-transparent shadow-sm ring-2 ring-offset-1'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+              "
+              :style="
+                tickets.categoryIds.includes(category.id)
+                  ? {
+                      backgroundColor: category.color,
+                      color: getTextColor(category.color),
+                      '--tw-ring-color': category.color + '55',
+                    }
+                  : {}
+              "
             >
               {{ category.name }}
-            </option>
-          </select>
+            </button>
+          </div>
         </div>
 
-        <!-- Single selects group -->
-        <div class="flex flex-wrap items-end gap-3 self-end">
+        <!-- Single selects group — pushed to the right on wide screens -->
+        <div class="flex flex-wrap items-end gap-3 sm:ml-auto">
           <!-- Assignee -->
           <div class="flex flex-col gap-1">
             <label
