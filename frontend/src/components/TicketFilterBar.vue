@@ -108,7 +108,8 @@ onMounted(() => {
       <div class="flex flex-wrap items-start gap-x-6 gap-y-3">
         <!-- Status Filter — toggle pill chips -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
+          <label
+            class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
             >Status</label
           >
           <div data-testid="filter-status" class="flex flex-wrap gap-1.5">
@@ -149,7 +150,8 @@ onMounted(() => {
 
         <!-- Priority Filter — toggle pill chips -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
+          <label
+            class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
             >Priority</label
           >
           <div data-testid="filter-priority" class="flex flex-wrap gap-1.5">
@@ -190,7 +192,8 @@ onMounted(() => {
 
         <!-- Category Filter — toggle pill chips -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
+          <label
+            class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
             >Category</label
           >
           <div data-testid="filter-category" class="flex flex-wrap gap-1.5">
