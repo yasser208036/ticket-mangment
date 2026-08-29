@@ -58,6 +58,10 @@ export const useUsersStore = defineStore('users', () => {
   // caller is a dialog with its own error line, and a picker that silently came
   // back empty reads as "there are no agents".
   async function loadAgents(): Promise<void> {
+    // Cleared first: on a failed reload the caller shows an error, and leaving
+    // the previous fetch on screen offers agents who may since have been
+    // deactivated -- selectable, then a 422 on submit.
+    agents.value = []
     const response = await listUsers({
       role: 'agent',
       status: 'active',

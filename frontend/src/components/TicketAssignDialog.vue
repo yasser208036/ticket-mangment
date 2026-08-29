@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { errorMessage, validationErrors } from '../api/errors'
 import type { TicketDetail } from '../api/tickets'
 import { useTicketsStore } from '../stores/tickets'
@@ -19,6 +19,16 @@ const reason = ref('')
 const error = ref('')
 const errors = ref<Record<string, string[]>>({})
 
+// The select opens on the current assignee for context, which means Assign
+// would otherwise submit a no-op: the server writes no activity row for it and
+// so discards any reason typed alongside, returning a 200 that looks like
+// success. Nothing to assign until the choice actually changes.
+const unchanged = computed(
+  () =>
+    selected.value === undefined ||
+    selected.value === props.ticket.assignee?.id,
+)
+
 onMounted(async () => {
   try {
     await users.loadAgents()
@@ -30,7 +40,7 @@ onMounted(async () => {
 // Guarded rather than `submit(selected ?? null)`: coercing an unset select to
 // null would turn a mis-click on a disabled button into an unassign.
 function confirm(): void {
-  if (selected.value === undefined) return
+  if (unchanged.value || selected.value === undefined) return
   void submit(selected.value)
 }
 
@@ -154,7 +164,7 @@ async function submit(assignedTo: number | null): Promise<void> {
         <button
           data-testid="ticket-assign-confirm"
           type="button"
-          :disabled="selected === undefined || store.assigning"
+          :disabled="unchanged || store.assigning"
           @click="confirm"
           class="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors disabled:opacity-50"
         >

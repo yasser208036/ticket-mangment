@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { AxiosError } from 'axios'
 import { createPinia, setActivePinia } from 'pinia'
+import type { Pinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { assignTicket, getTicket } from '../api/tickets'
 import type { TicketDetail } from '../api/tickets'
@@ -87,10 +88,13 @@ const ticket: TicketDetail = {
   },
 }
 
-function mountDialog(overrides: Partial<TicketDetail> = {}) {
+function mountDialog(
+  overrides: Partial<TicketDetail> = {},
+  pinia: Pinia = createPinia(),
+) {
   return mount(TicketAssignDialog, {
     props: { ticket: { ...ticket, ...overrides } },
-    global: { plugins: [createPinia()] },
+    global: { plugins: [pinia] },
   })
 }
 
@@ -109,8 +113,11 @@ async function chooseAgent(
 }
 
 /** Mount, then wait for the onMounted agent fetch to settle. */
-async function mountLoaded(overrides: Partial<TicketDetail> = {}) {
-  const wrapper = mountDialog(overrides)
+async function mountLoaded(
+  overrides: Partial<TicketDetail> = {},
+  pinia?: Pinia,
+) {
+  const wrapper = mountDialog(overrides, pinia)
   await flushPromises()
   return wrapper
 }
@@ -178,6 +185,46 @@ describe('TicketAssignDialog', () => {
 
     await chooseAgent(wrapper)
     expect(confirm().attributes('disabled')).toBeUndefined()
+  })
+
+  /**
+   * The select opens on the current assignee, so an untouched Assign would post
+   * a no-op the server answers 200 to while writing nothing -- silently binning
+   * the reason. Return to queue stays available; it is a real change.
+   */
+  it('keeps confirm disabled while the pre-selected assignee is unchanged', async () => {
+    const wrapper = await mountLoaded({ assignee: agent })
+    await wrapper
+      .get('[data-testid="ticket-assign-reason"]')
+      .setValue('Context')
+    expect(
+      wrapper
+        .get('[data-testid="ticket-assign-confirm"]')
+        .attributes('disabled'),
+    ).toBeDefined()
+
+    await wrapper.get('[data-testid="ticket-assign-confirm"]').trigger('click')
+    await flushPromises()
+    expect(assignTicket).not.toHaveBeenCalled()
+    expect(
+      wrapper
+        .get('[data-testid="ticket-assign-unassign"]')
+        .attributes('disabled'),
+    ).toBeUndefined()
+  })
+
+  it('drops a previously loaded agent list when a later load fails', async () => {
+    // One shared store across both mounts -- the point is that `agents` outlives
+    // the dialog, so a failed reopen must not keep offering the earlier fetch.
+    const pinia = createPinia()
+    const first = await mountLoaded({}, pinia)
+    expect(first.findAll('option')).toHaveLength(2)
+
+    vi.mocked(listUsers).mockRejectedValue(new Error('offline'))
+    const second = await mountLoaded({}, pinia)
+    // Only the placeholder: a stale agent may since have been deactivated, and
+    // offering them would 422 on submit.
+    expect(second.findAll('option')).toHaveLength(1)
   })
 
   it('offers Return to queue only when the ticket is assigned', async () => {

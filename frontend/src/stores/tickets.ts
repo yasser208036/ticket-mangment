@@ -95,7 +95,13 @@ export const useTicketsStore = defineStore('tickets', () => {
     assigning.value = true
     try {
       await assignTicket(id, assignedTo, reason)
-      await loadTicket(id)
+      // Re-read rather than patching `current`: the assign response omits
+      // `can`, and can.claim flips the moment a ticket gains an assignee.
+      // `loadTicket()` is not reused here for the same reason changeStatus()
+      // avoids it -- it nulls `current` first, which momentarily fails the
+      // assign dialog's `v-if="... && store.current"` guard and unmounts it
+      // mid-submit, so the dialog never receives its own `assigned` emit.
+      current.value = await getTicket(id)
       void useStatsStore().load()
     } finally {
       assigning.value = false
