@@ -2,15 +2,11 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
-import { useStatsStore } from './stores/stats'
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
-const stats = useStatsStore()
 const mobileMenuOpen = ref(false)
-
-const myOpenCount = computed(() => stats.data?.mine_open ?? 0)
 
 const userInitials = computed(() => {
   if (!auth.user?.name) return '?'
@@ -21,14 +17,6 @@ const userInitials = computed(() => {
     .toUpperCase()
     .slice(0, 2)
 })
-
-watch(
-  () => auth.isAuthenticated,
-  (signedIn) => {
-    if (signedIn) void stats.load()
-  },
-  { immediate: true },
-)
 
 watch(
   () => route.path,
@@ -96,21 +84,6 @@ async function signOut(): Promise<void> {
               data-testid="nav-tickets"
             >
               Tickets
-            </RouterLink>
-            <RouterLink
-              :to="{ name: 'my-tickets' }"
-              class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-my-tickets"
-            >
-              <span>My tickets</span>
-              <span
-                v-if="myOpenCount > 0"
-                class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1.5 text-xs font-bold text-white shadow-xs"
-                data-testid="nav-my-tickets-count"
-              >
-                {{ myOpenCount }}
-              </span>
             </RouterLink>
             <RouterLink
               :to="{ name: 'new-ticket' }"
@@ -261,21 +234,6 @@ async function signOut(): Promise<void> {
             data-testid="nav-tickets"
           >
             Tickets
-          </RouterLink>
-          <RouterLink
-            :to="{ name: 'my-tickets' }"
-            class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-slate-100"
-            active-class="bg-indigo-50 text-indigo-700 font-semibold"
-            data-testid="nav-my-tickets"
-          >
-            <span>My tickets</span>
-            <span
-              v-if="myOpenCount > 0"
-              class="rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-bold text-white"
-              data-testid="nav-my-tickets-count"
-            >
-              {{ myOpenCount }}
-            </span>
           </RouterLink>
           <RouterLink
             :to="{ name: 'new-ticket' }"

@@ -182,7 +182,6 @@ Cohesive action buttons with status disabled states and danger button for deleti
 ### 4.1 Global Application Shell (`App.vue`)
 - **Sticky Glassmorphic Header**: `backdrop-blur-md bg-white/90` with Deskflow gradient brand icon.
 - **Active Navigation States**: Active routes styled with `active-class="bg-indigo-50 text-indigo-700 font-semibold"`.
-- **Dynamic Counters**: "My tickets" displays badge counter for open tickets (`data-testid="nav-my-tickets-count"`).
 - **User Profile Pill**: Avatar circle with initials, user name, role, Password link, and Sign out button.
 - **Mobile Menu Drawer**: Slide-down navigation on smaller screens with hamburger toggle.
 

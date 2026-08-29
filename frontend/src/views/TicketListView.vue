@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CategoryBadge from '../components/CategoryBadge.vue'
 import ColorBadge from '../components/ColorBadge.vue'
 import EscalationBadge from '../components/EscalationBadge.vue'
 import TicketFilterBar from '../components/TicketFilterBar.vue'
 import { relativeAge } from '../lib/relativeTime'
-import { fromQuery, presetFor, toQuery } from '../lib/ticketQuery'
-import { useMasterDataStore } from '../stores/masterData'
+import { fromQuery, toQuery } from '../lib/ticketQuery'
 import { useTicketsStore } from '../stores/tickets'
 
 const store = useTicketsStore()
-const masterData = useMasterDataStore()
 const route = useRoute()
 const router = useRouter()
 const pageSizes = [15, 25, 50, 100]
@@ -33,33 +31,9 @@ function queryState() {
     page: store.page,
   }
 }
-const isMine = computed(() => route.meta.scope === 'mine')
-const includeDone = computed({
-  get: () =>
-    store.statusIds.length === 0 ||
-    store.statusIds.some((id) => masterData.terminalStatusIds.includes(id)),
-  set: (value: boolean) => {
-    store.statusIds = value ? [] : [...masterData.openStatusIds]
-    void store.applyFilters()
-  },
-})
-const emptyMessage = computed(() =>
-  isMine.value
-    ? includeDone.value
-      ? 'You have no tickets.'
-      : 'You have no open tickets.'
-    : 'No tickets on this page.',
-)
 async function hydrateFromRoute(): Promise<void> {
   if (syncing) return
-  if (isMine.value) await masterData.ensureLoaded()
-  store.preset = isMine.value ? presetFor(masterData.openStatusIds) : null
-  Object.assign(
-    store,
-    route.meta.scope === 'mine' && Object.keys(route.query).length === 0
-      ? store.preset
-      : fromQuery(route.query),
-  )
+  Object.assign(store, fromQuery(route.query))
   await store.load()
 }
 function toggleSort(sort: 'priority' | 'created_at' | 'escalated_at'): void {
@@ -104,7 +78,7 @@ watch(() => route.fullPath, hydrateFromRoute, { deep: true })
         <h1
           class="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl"
         >
-          {{ isMine ? 'My Tickets' : 'Tickets' }}
+          Tickets
         </h1>
         <span
           v-if="store.meta"
@@ -115,19 +89,6 @@ watch(() => route.fullPath, hydrateFromRoute, { deep: true })
       </div>
 
       <div class="flex items-center gap-3">
-        <label
-          v-if="isMine"
-          class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-2xs transition-colors hover:bg-slate-50"
-        >
-          <input
-            v-model="includeDone"
-            type="checkbox"
-            data-testid="my-tickets-include-done"
-            class="h-4 w-4 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          <span>Include resolved & closed</span>
-        </label>
-
         <RouterLink
           :to="{ name: 'new-ticket' }"
           class="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition-all hover:bg-indigo-700 active:scale-95"
@@ -530,7 +491,7 @@ watch(() => route.fullPath, hydrateFromRoute, { deep: true })
         class="mt-4 text-base font-bold text-slate-900"
         data-testid="tickets-empty"
       >
-        {{ emptyMessage }}
+        No tickets on this page.
       </p>
       <p class="mt-1 text-xs text-slate-500">
         Try clearing active search/filters or file a new ticket to get started.

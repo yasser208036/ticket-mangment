@@ -23,7 +23,7 @@ import { addTicketNote, listTicketActivities } from '../api/activities'
 import type { TicketActivity } from '../api/activities'
 import type { Paginated } from '../api/pagination'
 import { errorMessage, isNotFound } from '../api/errors'
-import { EMPTY_QUERY_STATE, type TicketQueryState } from '../lib/ticketQuery'
+import { EMPTY_QUERY_STATE } from '../lib/ticketQuery'
 import { useStatsStore } from './stats'
 export const useTicketsStore = defineStore('tickets', () => {
   const creating = ref(false)
@@ -41,7 +41,6 @@ export const useTicketsStore = defineStore('tickets', () => {
   const q = ref('')
   const sort = ref<TicketSort>('created_at')
   const direction = ref<TicketDirection>('desc')
-  const preset = ref<TicketQueryState | null>(null)
   const activeFilterCount = computed(
     () =>
       (statusIds.value.length ? 1 : 0) +
@@ -245,7 +244,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     await load()
   }
   async function clearAll(): Promise<void> {
-    const base = preset.value ?? EMPTY_QUERY_STATE
+    const base = EMPTY_QUERY_STATE
     statusIds.value = [...base.statusIds]
     priorityIds.value = [...base.priorityIds]
     categoryIds.value = [...base.categoryIds]
@@ -274,7 +273,6 @@ export const useTicketsStore = defineStore('tickets', () => {
     q,
     sort,
     direction,
-    preset,
     activeFilterCount,
     load,
     goToPage,
