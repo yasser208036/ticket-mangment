@@ -105,6 +105,8 @@ escalation level.
 | `POST` | `/api/v1/admin/users` | Create a staff account. | admin bearer (UserPolicy) | TM-12 |
 | `GET` | `/api/v1/admin/users/{user}` | Return one staff account. | admin bearer (UserPolicy) | TM-12 |
 | `PATCH` | `/api/v1/admin/users/{user}` | Edit or deactivate a staff account. | admin bearer (UserPolicy) | TM-12 |
+| `DELETE` | `/api/v1/admin/users/{user}` | Delete a staff account, reassigning their tickets. | admin bearer (UserPolicy) | TM-12 |
+| `PATCH` | `/api/v1/admin/users/{user}/password` | Set another user's password. | admin bearer (UserPolicy) | TM-12 |
 | `GET` | `/api/v1/admin/workload` | Open ticket counts per person, split by priority, with load bands. | admin bearer (middleware) | TM-35 |
 
 ### `GET /api/v1/tickets`
@@ -348,8 +350,11 @@ Returns `204` with empty body. Every other token for user is revoked; requesting
 token remains valid. Invalid current password returns `422` under
 `errors.current_password`; other validation failures return `422` under
 `errors.password`. Missing, revoked, or inactive-account tokens return `401`.
-Excess attempts return `429`. No admin-initiated or email-based password reset
-exists.
+Excess attempts return `429`. This endpoint is for your **own** password only;
+an admin setting someone else's uses
+`PATCH /api/v1/admin/users/{user}/password`. No email-based self-service reset
+exists — `password_reset_tokens` is created by the users migration and nothing
+reads it.
 
 ### `GET /api/v1/health`
 
@@ -543,6 +548,61 @@ is always present on the detail route, is `0` for a ticket that has never been
 reopened, and survives the ticket moving on from Reopened.
 
 Rows are ordered by `name` then `id`, matching `GET /api/v1/admin/users`.
+
+### `DELETE /api/v1/admin/users/{user}`
+
+**Admin-only bearer token.** Optional body `{"reassign_to": <user id>}` — a
+`DELETE` with a body, the same shape `DELETE /api/v1/categories/{category}`
+uses. `204` on success, having revoked every token the deleted account held
+(`personal_access_tokens` has no foreign key, so nothing cascades).
+
+`PATCH` is the ordinary way to remove someone: deactivation keeps every
+reference intact. A delete is refused whenever it would lose something:
+
+- The target still owns tickets and no `reassign_to` was sent — **`422`** with
+  `errors.reassign_to`, plus `ticket_count` and `reassign_to_options` (a
+  `UserResource` array of active accounts) in the same body, so the client can
+  offer the choice without a second request. `tickets.created_by` is
+  `ON DELETE RESTRICT`, so this refusal is what stands between an admin and a
+  driver-level `500`.
+- `reassign_to` names a deactivated, unknown, or self id — **`422`** under
+  `errors.reassign_to`.
+- The target is the last active administrator — **`422`** under `errors.user`,
+  checked under a row lock inside the deleting transaction.
+- The target is the acting admin — **`403`**; you cannot delete the account
+  making the request.
+- The caller is an agent — **`403`**. An unknown id is **`404`**.
+
+Both the target's authored (`created_by`) and assigned (`assigned_to`) tickets
+move to `reassign_to`, soft-deleted tickets included, and each move is written
+to that ticket's activity trail: an `assigned` row for an assignment and an
+`updated` row with `field: "created_by"` for authorship, both carrying
+`meta.reason: "user_deleted"` and the deleted person's name in
+`meta.from_name`. Historical `ticket_activities.user_id` and
+`tickets.escalated_by` references are **not** rewritten — they are
+`ON DELETE SET NULL`, so those rows keep their event, values and timestamp and
+lose the actor, exactly as a system-generated activity row has always looked.
+
+### `PATCH /api/v1/admin/users/{user}/password`
+
+**Admin-only bearer token**, limited to **6 requests per minute** per acting
+admin — the same limiter as `PATCH /api/v1/auth/password`, not the 60/min write
+limiter. Body requires `current_password` — **the acting admin's own password**,
+not the target's — and `password`, which must be at least 8 characters. There is
+no `password_confirmation`: a typo locks out someone else and is fixed by
+repeating the reset.
+
+`204` with an empty body on success. **Every token the target holds is revoked**
+and the acting admin's own token is untouched, so the target must sign in again
+everywhere with the new password. A wrong or missing `current_password` is a
+**`422`** under `errors.current_password` and changes nothing; a short password
+is a `422` under `errors.password`. Resetting **your own** password here is a
+**`403`** — use `PATCH /api/v1/auth/password`, which proves you know the current
+one. An agent gets `403`, an unknown id `404`, excess attempts `429`.
+
+The reset is recorded as a `warning` log line carrying the two user ids and
+nothing else. The account holder is **not** emailed that their password changed;
+no story owns that notification yet.
 
 ## Notifications
 

@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
+import UserDeleteDialog from '../components/UserDeleteDialog.vue'
 import UserFormDialog from '../components/UserFormDialog.vue'
+import UserPasswordDialog from '../components/UserPasswordDialog.vue'
+import { errorMessage } from '../api/errors'
+import { deleteBlockedBy } from '../api/users'
+import { useAuthStore } from '../stores/auth'
 import { useUsersStore } from '../stores/users'
-import type { AdminUser } from '../api/users'
+import type { AdminUser, UserDeleteBlocked } from '../api/users'
 const store = useUsersStore()
+const auth = useAuthStore()
 const editing = ref<AdminUser | undefined>()
 const open = ref(false)
+const deleting = ref<AdminUser | undefined>()
+const blocked = ref<UserDeleteBlocked | null>(null)
+const resetting = ref<AdminUser | undefined>()
+const notice = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
 watch([() => store.search, () => store.status], () => {
   clearTimeout(timer)
@@ -23,6 +33,40 @@ function createUser(): void {
 function editUser(user: AdminUser): void {
   editing.value = user
   open.value = true
+}
+function isSelf(user: AdminUser): boolean {
+  return user.id === auth.user?.id
+}
+/**
+ * Two phases, as the categories screen does it: try the delete, and only open
+ * the dialog with a destination picker if the server says one is needed. An
+ * unblocked delete never shows a choice that does not exist.
+ */
+async function deleteUser(user: AdminUser): Promise<void> {
+  notice.value = ''
+  deleting.value = user
+  blocked.value = null
+  try {
+    await store.remove(user.id)
+    deleting.value = undefined
+    notice.value = `${user.name} was deleted.`
+  } catch (reason) {
+    const details = deleteBlockedBy(reason)
+    if (details) {
+      blocked.value = details
+      return
+    }
+    deleting.value = undefined
+    store.error = errorMessage(reason)
+  }
+}
+function resetPassword(user: AdminUser): void {
+  notice.value = ''
+  resetting.value = user
+}
+function passwordWasReset(): void {
+  notice.value = `${resetting.value?.name} was signed out everywhere and needs the new password.`
+  resetting.value = undefined
 }
 </script>
 <template>
@@ -220,6 +264,25 @@ function editUser(user: AdminUser): void {
                 >
                   Edit
                 </button>
+                <!-- Absent, not disabled, on your own row: both actions are
+                     irreversible, and a greyed-out Delete on yourself only
+                     invites someone to look for the way to enable it. -->
+                <button
+                  v-if="!isSelf(user)"
+                  data-testid="users-reset-password"
+                  @click="resetPassword(user)"
+                  class="rounded-lg px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  Reset password
+                </button>
+                <button
+                  v-if="!isSelf(user)"
+                  data-testid="users-delete"
+                  @click="void deleteUser(user)"
+                  class="rounded-lg px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                >
+                  Delete
+                </button>
               </td>
             </tr>
           </tbody>
@@ -300,6 +363,14 @@ function editUser(user: AdminUser): void {
       </div>
     </div>
 
+    <p
+      v-if="notice"
+      data-testid="users-notice"
+      class="rounded-xl bg-emerald-50 p-3 text-xs font-medium text-emerald-800"
+    >
+      {{ notice }}
+    </p>
+
     <!-- Empty State -->
     <div
       v-if="!store.loading && !store.users.length"
@@ -335,6 +406,23 @@ function editUser(user: AdminUser): void {
       :user="editing"
       @saved="open = false"
       @close="open = false"
+    />
+
+    <UserDeleteDialog
+      v-if="deleting && blocked"
+      data-testid="users-delete-dialog"
+      :user="deleting"
+      :blocked="blocked"
+      @deleted="deleting = undefined"
+      @close="deleting = undefined"
+    />
+
+    <UserPasswordDialog
+      v-if="resetting"
+      data-testid="users-password-dialog"
+      :user="resetting"
+      @saved="passwordWasReset"
+      @close="resetting = undefined"
     />
   </main>
 </template>
