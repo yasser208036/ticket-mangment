@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend - Pint + PHPUnit
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_secret
+          MYSQL_DATABASE: ticket_management_test
+          MYSQL_USER: ticket_user
+          MYSQL_PASSWORD: secret
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mysqladmin --protocol=TCP -h 127.0.0.1 -uticket_user -psecret status"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+          --health-start-period=60s
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, mbstring, bcmath, intl
+          coverage: none
+          tools: composer:v2
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Pint
+        run: ./vendor/bin/pint --test
+      - name: PHPUnit
+        if: ${{ !cancelled() }}
+        run: composer test
+
+  frontend:
+    name: Frontend - ESLint + Prettier + Vitest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Node dependencies
+        run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Prettier
+        if: ${{ !cancelled() }}
+        run: npm run format:check
+      - name: Type check
+        if: ${{ !cancelled() }}
+        run: npm run typecheck
+      - name: Vitest
+        if: ${{ !cancelled() }}
+        run: npm run test:unit
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

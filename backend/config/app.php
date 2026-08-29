@@ -17,6 +17,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Application Version
+    |--------------------------------------------------------------------------
+    |
+    | Reported by GET /api/v1/health so a deploy can confirm which build is
+    | actually serving traffic. Set APP_VERSION from the release tag in CI;
+    | the fallback is the current pre-release value.
+    |
+    */
+
+    'version' => env('APP_VERSION', '0.1.0'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | Where the Vue SPA is served. Notification emails build their deep links
+    | from it — the ticket page is {frontend_url}/tickets/{id}, keyed on the
+    | numeric id, not the reference (frontend/src/router/index.ts).
+    |
+    | config/cors.php reads the same FRONTEND_URL variable with the same
+    | default. That is deliberate: a config file must not call config(), so the
+    | two files each read env() rather than one deferring to the other.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

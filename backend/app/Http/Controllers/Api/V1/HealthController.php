@@ -28,7 +28,8 @@ class HealthController extends Controller
             'status' => $healthy ? 'ok' : 'degraded',
             'app' => config('app.name'),
             'environment' => config('app.env'),
-            'version' => 'v1',
+            'version' => config('app.version'),
+            'api' => 'v1',
             'time' => now()->toIso8601String(),
             'checks' => $checks,
         ], $healthy ? 200 : 503);

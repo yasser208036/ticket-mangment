@@ -25,11 +25,11 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     healthcheck:
-      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-p${DB_ROOT_PASSWORD:-root_secret}']
+      test: ['CMD-SHELL', 'mysql --protocol=TCP -h 127.0.0.1 -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" -e "SELECT 1" "$$MYSQL_DATABASE" > /dev/null 2>&1']
       interval: 5s
       timeout: 5s
       retries: 20
-      start_period: 30s
+      start_period: 60s
 
   # A second database used only by the test suite, so running tests never
   # truncates the data you are developing against.
@@ -38,7 +38,7 @@ services:
     container_name: tm-mysql-test
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ticket_management_test
+      MYSQL_DATABASE: ${DB_TEST_DATABASE:-ticket_management_test}
       MYSQL_USER: ${DB_USERNAME:-ticket_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_secret}
@@ -50,15 +50,15 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     healthcheck:
-      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-p${DB_ROOT_PASSWORD:-root_secret}']
+      test: ['CMD-SHELL', 'mysql --protocol=TCP -h 127.0.0.1 -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" -e "SELECT 1" "$$MYSQL_DATABASE" > /dev/null 2>&1']
       interval: 5s
       timeout: 5s
       retries: 20
-      start_period: 30s
+      start_period: 60s
 
   # Catches every outgoing email in development. Nothing can reach a real inbox.
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.31.0
     container_name: tm-mailpit
     restart: unless-stopped
     ports:
@@ -68,6 +68,12 @@ services:
       MP_MAX_MESSAGES: 500
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 volumes:
   mysql-data:

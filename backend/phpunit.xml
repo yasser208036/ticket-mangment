@@ -25,6 +25,15 @@
         <env name="CACHE_STORE" value="array"/>
 
         <!--
+            Without this, $this->seed() with no argument throws (AdminUserSeeder
+            aborts on a blank password) unless a developer's ambient .env happens
+            to leak ADMIN_PASSWORD through. Setting it here makes the suite
+            self-contained. Distinct from UserFactory's own literal 'password'
+            default so the two are never confused in a test asserting on either.
+        -->
+        <env name="ADMIN_PASSWORD" value="testing-admin-password"/>
+
+        <!--
             Tests run against the real database engine, not SQLite in memory.
             The schema uses engine-specific features (a FULLTEXT index, ENUM
             columns, ON DELETE RESTRICT), and SQLite would silently accept
@@ -37,10 +46,21 @@
         <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="3307"/>
         <env name="DB_DATABASE" value="ticket_management_test"/>
+        <env name="DB_USERNAME" value="ticket_user"/>
+        <env name="DB_PASSWORD" value="secret"/>
         <env name="DB_URL" value=""/>
 
         <env name="MAIL_MAILER" value="array"/>
-        <env name="QUEUE_CONNECTION" value="sync"/>
+
+        <!--
+            The queue is exercised, not bypassed. Under "sync" a queued mailable
+            runs inline inside the request, so a test asserting a notification
+            was *queued* would pass against code that sends it synchronously —
+            which is exactly what TM-52 and TM-57 forbid. RefreshDatabase
+            migrates jobs, job_batches and failed_jobs like any other table and
+            rolls their rows back with everything else.
+        -->
+        <env name="QUEUE_CONNECTION" value="database"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

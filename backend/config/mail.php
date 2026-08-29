@@ -115,4 +115,34 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Development Mail Safety
+    |--------------------------------------------------------------------------
+    |
+    | In a guarded environment a message must not be able to leave the machine.
+    | Mailpit already swallows everything sent to 127.0.0.1:1025, so the risk
+    | is not this file's defaults — it is a .env that points MAIL_MAILER or
+    | MAIL_URL at a real relay. App\Services\MailSafety enforces the rule on
+    | Illuminate\Mail\Events\MessageSending, before the transport connects.
+    |
+    | Production is deliberately absent: mail has to work there.
+    |
+    */
+
+    'safety' => [
+
+        'guarded_environments' => ['local', 'testing'],
+
+        // Transports that cannot deliver anywhere.
+        'safe_transports' => ['log', 'array'],
+
+        // SMTP is safe only when it points at a local catcher such as Mailpit.
+        'safe_smtp_hosts' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('MAIL_SAFE_SMTP_HOSTS', '127.0.0.1,localhost,::1,mailpit')),
+        ))),
+
+    ],
+
 ];
