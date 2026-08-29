@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import type { TicketDetail } from '../api/tickets'
 defineProps<{ ticket: TicketDetail }>()
-const emit = defineEmits<{ delete: []; escalate: []; status: [] }>()
+const emit = defineEmits<{
+  assign: []
+  delete: []
+  escalate: []
+  status: []
+}>()
 </script>
 <template>
   <div class="flex flex-wrap items-center gap-2">
@@ -30,7 +35,7 @@ const emit = defineEmits<{ delete: []; escalate: []; status: [] }>()
     <button
       v-if="ticket.can.assign"
       data-testid="action-assign"
-      disabled
+      @click="emit('assign')"
       class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
     >
       <svg

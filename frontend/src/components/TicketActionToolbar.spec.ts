@@ -92,13 +92,26 @@ describe('TicketActionToolbar', () => {
     expect(wrapper.emitted('status')).toHaveLength(1)
   })
 
-  it('Edit and Assign are still disabled', () => {
+  it('renders the assign button enabled and emits assign on click', async () => {
+    const wrapper = mount(TicketActionToolbar, { props: { ticket } })
+    const button = wrapper.get('[data-testid="action-assign"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await button.trigger('click')
+    expect(wrapper.emitted('assign')).toHaveLength(1)
+  })
+
+  it('hides the assign button when can.assign is false', () => {
+    const wrapper = mount(TicketActionToolbar, {
+      props: { ticket: { ...ticket, can: { ...ticket.can, assign: false } } },
+    })
+    expect(wrapper.find('[data-testid="action-assign"]').exists()).toBe(false)
+  })
+
+  it('Edit is still disabled', () => {
     const wrapper = mount(TicketActionToolbar, { props: { ticket } })
     expect(
       wrapper.get('[data-testid="action-edit"]').attributes('disabled'),
-    ).toBeDefined()
-    expect(
-      wrapper.get('[data-testid="action-assign"]').attributes('disabled'),
     ).toBeDefined()
   })
 })

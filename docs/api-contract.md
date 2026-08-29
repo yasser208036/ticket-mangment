@@ -244,6 +244,30 @@ assignee is still `200` and writes **zero** activity rows — it is a no-op, not
 an error. Assigning writes one `assigned` row; unassigning (`assigned_to:
 null`) writes one `unassigned` row instead, both under `field = 'assigned_to'`.
 
+`reason` is optional free text, capped at **500 characters** (characters, not
+bytes — a 500-character Arabic reason is accepted and stored unescaped). It is
+kept on the activity row as `meta.reason`, and the timeline renders it. Three
+details of that contract are load-bearing:
+
+- **`meta.reason` is absent when no reason was given, not `null`**, so a reader
+  can tell "no reason offered" from "reason cleared". Note that `meta.reason` on
+  a `category_changed` row is a machine string (`'category_deleted'`); here it is
+  free text written by a person, stored verbatim and escaped by the renderer.
+- **A no-op assignment drops the reason.** Re-assigning the ticket's current
+  assignee writes no activity row, so a reason sent with it is silently
+  discarded. Nothing changed, so there is nothing to annotate.
+- **`assigned_to: ""` unassigns.** Laravel's `ConvertEmptyStringsToNull`
+  middleware rewrites `""` to `null` before validation, so the API cannot
+  distinguish an empty form field from a deliberate `null`. Clients must send
+  `null` on purpose and must never submit an empty assignee field.
+
+**Notifications.** A successful assignment or reassignment dispatches
+`App\Events\TicketAssigned` **after the transaction commits**, and its listener
+emails the new assignee. **Unassigning dispatches nothing, and the previous
+assignee is never notified.** A no-op assignment dispatches nothing either, so a
+double submit cannot double-notify, and a self-assignment (including
+`/claim`) sends no email.
+
 ### `POST /api/v1/tickets/{ticket}/claim`
 
 **Agent-only bearer token** — `403` for an admin (`TicketPolicy::claim`). No

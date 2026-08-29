@@ -24,6 +24,12 @@ export const useUsersStore = defineStore('users', () => {
   const perPage = ref(15)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  // Assignable agents, kept apart from `users` on purpose: `users` is the
+  // admin table's paginated, searched, sorted state, and an assignee picker
+  // must not be at the mercy of whatever filter that table was left on — nor
+  // may it offer admins or deactivated accounts, which /assign rejects with a
+  // 422.
+  const agents = ref<AdminUser[]>([])
   let latestRequest = 0
   async function load(): Promise<void> {
     const request = ++latestRequest
@@ -47,6 +53,17 @@ export const useUsersStore = defineStore('users', () => {
     } finally {
       if (request === latestRequest) loading.value = false
     }
+  }
+  // Throws rather than filling `error`, which belongs to the admin table: the
+  // caller is a dialog with its own error line, and a picker that silently came
+  // back empty reads as "there are no agents".
+  async function loadAgents(): Promise<void> {
+    const response = await listUsers({
+      role: 'agent',
+      status: 'active',
+      per_page: 100,
+    })
+    agents.value = response.data
   }
   async function applyFilters(next: {
     search?: string
@@ -85,6 +102,8 @@ export const useUsersStore = defineStore('users', () => {
   }
   return {
     users,
+    agents,
+    loadAgents,
     meta,
     search,
     status,
