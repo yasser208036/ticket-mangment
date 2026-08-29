@@ -2,10 +2,16 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { changeTicketStatus, getTicket } from '../api/tickets'
+import {
+  assignTicket,
+  changeTicketStatus,
+  escalateTicket,
+  getTicket,
+} from '../api/tickets'
 import type { TicketDetail } from '../api/tickets'
 import { getTicketStats } from '../api/stats'
 import { listTicketActivities } from '../api/activities'
+import { listUsers } from '../api/users'
 import { createAppRouter } from '../router'
 import { useAuthStore } from '../stores/auth'
 import TicketDetailView from './TicketDetailView.vue'
@@ -14,6 +20,8 @@ vi.mock('../api/tickets', async (loadOriginal) => ({
   ...(await loadOriginal()),
   getTicket: vi.fn(),
   changeTicketStatus: vi.fn(),
+  assignTicket: vi.fn(),
+  escalateTicket: vi.fn(),
 }))
 vi.mock('../api/stats', async (loadOriginal) => ({
   ...(await loadOriginal()),
@@ -22,6 +30,10 @@ vi.mock('../api/stats', async (loadOriginal) => ({
 vi.mock('../api/activities', async (loadOriginal) => ({
   ...(await loadOriginal()),
   listTicketActivities: vi.fn(),
+}))
+vi.mock('../api/users', async (loadOriginal) => ({
+  ...(await loadOriginal()),
+  listUsers: vi.fn(),
 }))
 
 const baseTicket: TicketDetail = {
@@ -226,6 +238,70 @@ describe('TicketDetailView status change', () => {
     await wrapper.get('[data-testid="ticket-status-cancel"]').trigger('click')
     expect(wrapper.find('[data-testid="ticket-status-dialog"]').exists()).toBe(
       false,
+    )
+  })
+
+  /**
+   * The dialog is mounted under `v-if="assignOpen && store.current"`, so a
+   * refresh that nulls `current` first unmounts it mid-submit and Vue drops
+   * its `assigned` emit -- leaving it open and blank. `changeStatus` already
+   * documents this hazard; `assign` has to avoid it the same way.
+   */
+  /** Same unmount-mid-submit hazard as the assign dialog; see that test. */
+  it('after a confirmed escalation, the dialog closes and the level is shown', async () => {
+    const wrapper = await mountDetail(baseTicket)
+    const escalated = { ...baseTicket, escalation_level: 1 }
+    vi.mocked(escalateTicket).mockResolvedValue(escalated)
+    vi.mocked(getTicket).mockResolvedValue(escalated)
+
+    await wrapper.get('[data-testid="action-escalate"]').trigger('click')
+    await wrapper
+      .get('[data-testid="ticket-escalate-reason"]')
+      .setValue('A good enough reason.')
+    await wrapper
+      .get('[data-testid="ticket-escalate-confirm"]')
+      .trigger('click')
+    await flushPromises()
+
+    expect(
+      wrapper.find('[data-testid="ticket-escalate-dialog"]').exists(),
+    ).toBe(false)
+  })
+
+  it('after a confirmed assign, the dialog closes and the assignee is shown', async () => {
+    const agent = { id: 7, name: 'Nadia' }
+    vi.mocked(listUsers).mockResolvedValue({
+      data: [
+        {
+          ...agent,
+          email: 'nadia@example.test',
+          role: 'agent',
+          is_active: true,
+          created_at: '2026-08-25T00:00:00Z',
+        },
+      ],
+      meta: { current_page: 1, last_page: 1, per_page: 100, total: 1 },
+    } as never)
+    const wrapper = await mountDetail(baseTicket)
+    vi.mocked(assignTicket).mockResolvedValue({
+      ...baseTicket,
+      assignee: agent,
+    })
+    vi.mocked(getTicket).mockResolvedValue({ ...baseTicket, assignee: agent })
+
+    await wrapper.get('[data-testid="action-assign"]').trigger('click')
+    await flushPromises()
+    const select = wrapper.get('[data-testid="ticket-assign-select"]')
+    ;(select.element as HTMLSelectElement).selectedIndex = 1
+    await select.trigger('change')
+    await wrapper.get('[data-testid="ticket-assign-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="ticket-assign-dialog"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.get('[data-testid="ticket-detail"]').text()).toContain(
+      'Nadia',
     )
   })
 

@@ -18,7 +18,6 @@ declare module 'vue-router' {
   interface RouteMeta {
     public?: boolean
     role?: UserRole
-    scope?: 'mine'
   }
 }
 
@@ -59,12 +58,6 @@ export function createAppRouter(history: RouterHistory = createWebHistory()) {
         meta: { role: 'admin' },
       },
       { path: '/tickets', name: 'tickets', component: TicketListView },
-      {
-        path: '/my-tickets',
-        name: 'my-tickets',
-        component: TicketListView,
-        meta: { scope: 'mine' },
-      },
       { path: '/tickets/new', name: 'new-ticket', component: NewTicketView },
       {
         path: '/tickets/:id',

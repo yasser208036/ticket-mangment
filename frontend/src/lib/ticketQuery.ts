@@ -27,13 +27,6 @@ export const EMPTY_QUERY_STATE: TicketQueryState = {
   page: 1,
   q: '',
 }
-export function presetFor(openStatusIds: number[]): TicketQueryState {
-  return {
-    ...EMPTY_QUERY_STATE,
-    assignedTo: 'me',
-    statusIds: [...openStatusIds],
-  }
-}
 const SORTS: TicketSort[] = [
   'created_at',
   'updated_at',

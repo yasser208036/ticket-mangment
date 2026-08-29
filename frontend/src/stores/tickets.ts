@@ -23,7 +23,7 @@ import { addTicketNote, listTicketActivities } from '../api/activities'
 import type { TicketActivity } from '../api/activities'
 import type { Paginated } from '../api/pagination'
 import { errorMessage, isNotFound } from '../api/errors'
-import { EMPTY_QUERY_STATE, type TicketQueryState } from '../lib/ticketQuery'
+import { EMPTY_QUERY_STATE } from '../lib/ticketQuery'
 import { useStatsStore } from './stats'
 export const useTicketsStore = defineStore('tickets', () => {
   const creating = ref(false)
@@ -41,7 +41,6 @@ export const useTicketsStore = defineStore('tickets', () => {
   const q = ref('')
   const sort = ref<TicketSort>('created_at')
   const direction = ref<TicketDirection>('desc')
-  const preset = ref<TicketQueryState | null>(null)
   const activeFilterCount = computed(
     () =>
       (statusIds.value.length ? 1 : 0) +
@@ -96,7 +95,13 @@ export const useTicketsStore = defineStore('tickets', () => {
     assigning.value = true
     try {
       await assignTicket(id, assignedTo, reason)
-      await loadTicket(id)
+      // Re-read rather than patching `current`: the assign response omits
+      // `can`, and can.claim flips the moment a ticket gains an assignee.
+      // `loadTicket()` is not reused here for the same reason changeStatus()
+      // avoids it -- it nulls `current` first, which momentarily fails the
+      // assign dialog's `v-if="... && store.current"` guard and unmounts it
+      // mid-submit, so the dialog never receives its own `assigned` emit.
+      current.value = await getTicket(id)
       void useStatsStore().load()
     } finally {
       assigning.value = false
@@ -118,7 +123,10 @@ export const useTicketsStore = defineStore('tickets', () => {
       await escalateTicket(id, reason)
       // Re-read: escalating changes the priority, the assignee, and
       // can.escalate itself, and the response omits the last of those.
-      await loadTicket(id)
+      // Not via loadTicket() -- it nulls `current` first, unmounting the
+      // escalate dialog mid-confirm so its `escalated` emit is dropped. Same
+      // hazard assign() and changeStatus() document.
+      current.value = await getTicket(id)
       void useStatsStore().load()
     } finally {
       escalating.value = false
@@ -245,7 +253,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     await load()
   }
   async function clearAll(): Promise<void> {
-    const base = preset.value ?? EMPTY_QUERY_STATE
+    const base = EMPTY_QUERY_STATE
     statusIds.value = [...base.statusIds]
     priorityIds.value = [...base.priorityIds]
     categoryIds.value = [...base.categoryIds]
@@ -274,7 +282,6 @@ export const useTicketsStore = defineStore('tickets', () => {
     q,
     sort,
     direction,
-    preset,
     activeFilterCount,
     load,
     goToPage,

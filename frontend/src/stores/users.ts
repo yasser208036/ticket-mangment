@@ -24,6 +24,12 @@ export const useUsersStore = defineStore('users', () => {
   const perPage = ref(15)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  // Assignable agents, kept apart from `users` on purpose: `users` is the
+  // admin table's paginated, searched, sorted state, and an assignee picker
+  // must not be at the mercy of whatever filter that table was left on — nor
+  // may it offer admins or deactivated accounts, which /assign rejects with a
+  // 422.
+  const agents = ref<AdminUser[]>([])
   let latestRequest = 0
   async function load(): Promise<void> {
     const request = ++latestRequest
@@ -47,6 +53,34 @@ export const useUsersStore = defineStore('users', () => {
     } finally {
       if (request === latestRequest) loading.value = false
     }
+  }
+  // Throws rather than filling `error`, which belongs to the admin table: the
+  // caller is a dialog with its own error line, and a picker that silently came
+  // back empty reads as "there are no agents".
+  async function loadAgents(): Promise<void> {
+    // Cleared first: on a failed reload the caller shows an error, and leaving
+    // the previous fetch on screen offers agents who may since have been
+    // deactivated -- selectable, then a 422 on submit.
+    agents.value = []
+    // Paged to exhaustion, because 100 is the endpoint's own per_page ceiling
+    // and a single request would drop agent 101 from the picker with nothing
+    // on screen to say so. Accumulated locally and assigned once, so a failure
+    // on page 2 leaves `agents` empty rather than half a roster.
+    const collected: AdminUser[] = []
+    let page = 1
+    let lastPage = 1
+    do {
+      const response = await listUsers({
+        role: 'agent',
+        status: 'active',
+        page,
+        per_page: 100,
+      })
+      collected.push(...response.data)
+      lastPage = response.meta.last_page
+      page += 1
+    } while (page <= lastPage)
+    agents.value = collected
   }
   async function applyFilters(next: {
     search?: string
@@ -85,6 +119,8 @@ export const useUsersStore = defineStore('users', () => {
   }
   return {
     users,
+    agents,
+    loadAgents,
     meta,
     search,
     status,

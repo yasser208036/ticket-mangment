@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import CategoryBadge from '../components/CategoryBadge.vue'
 import ColorBadge from '../components/ColorBadge.vue'
 import TicketActionToolbar from '../components/TicketActionToolbar.vue'
+import TicketAssignDialog from '../components/TicketAssignDialog.vue'
 import TicketEscalateDialog from '../components/TicketEscalateDialog.vue'
 import TicketNoteComposer from '../components/TicketNoteComposer.vue'
 import TicketStatusDialog from '../components/TicketStatusDialog.vue'
@@ -14,6 +15,7 @@ import { useTicketsStore } from '../stores/tickets'
 
 const route = useRoute()
 const store = useTicketsStore()
+const assignOpen = ref(false)
 const escalateOpen = ref(false)
 const statusOpen = ref(false)
 
@@ -183,12 +185,20 @@ watch(() => route.params.id, load)
           <div class="shrink-0">
             <TicketActionToolbar
               :ticket="store.current"
+              @assign="assignOpen = true"
               @escalate="escalateOpen = true"
               @status="statusOpen = true"
             />
           </div>
         </div>
       </div>
+
+      <TicketAssignDialog
+        v-if="assignOpen && store.current"
+        :ticket="store.current"
+        @assigned="assignOpen = false"
+        @close="assignOpen = false"
+      />
 
       <TicketEscalateDialog
         v-if="escalateOpen && store.current"

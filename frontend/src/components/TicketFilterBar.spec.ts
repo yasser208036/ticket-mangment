@@ -98,10 +98,11 @@ describe('TicketFilterBar', () => {
     vi.useRealTimers()
   })
 
-  it('selecting a status option sets statusIds and reloads', async () => {
+  it('clicking a status chip sets statusIds and reloads', async () => {
     const { wrapper, tickets } = mountBar()
-    const select = wrapper.get('[data-testid="filter-status"]')
-    await select.setValue(['1'])
+    // The filter-status div contains chip buttons; click the first one (id=1)
+    const chip = wrapper.get('[data-testid="filter-status"]').find('button')
+    await chip.trigger('click')
 
     expect(tickets.statusIds).toEqual([1])
     expect(listTickets).toHaveBeenCalledWith(
@@ -157,14 +158,18 @@ describe('TicketFilterBar', () => {
     )
   })
 
-  it('Clear disables when nothing is active and re-enables once a filter is set', async () => {
+  it('Clear disables when nothing is active and re-enables once a chip is selected', async () => {
     const { wrapper } = mountBar()
 
     expect(
       wrapper.get('[data-testid="filter-clear"]').attributes('disabled'),
     ).toBeDefined()
 
-    await wrapper.get('[data-testid="filter-status"]').setValue(['1'])
+    // Click the first status chip
+    await wrapper
+      .get('[data-testid="filter-status"]')
+      .find('button')
+      .trigger('click')
 
     expect(
       wrapper.get('[data-testid="filter-clear"]').attributes('disabled'),
@@ -173,8 +178,15 @@ describe('TicketFilterBar', () => {
 
   it('Clear resets every field to the empty state and reloads', async () => {
     const { wrapper, tickets } = mountBar()
-    await wrapper.get('[data-testid="filter-status"]').setValue(['1'])
-    await wrapper.get('[data-testid="filter-priority"]').setValue(['2'])
+    // Select a status chip and a priority chip
+    await wrapper
+      .get('[data-testid="filter-status"]')
+      .find('button')
+      .trigger('click')
+    await wrapper
+      .get('[data-testid="filter-priority"]')
+      .find('button')
+      .trigger('click')
     await wrapper.get('[data-testid="filter-sort"]').setValue('priority')
     vi.mocked(listTickets).mockClear()
 

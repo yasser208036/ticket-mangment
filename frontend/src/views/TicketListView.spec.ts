@@ -7,7 +7,6 @@ import type { Paginated } from '../api/pagination'
 import type { TicketListItem } from '../api/tickets'
 import { createAppRouter } from '../router'
 import { useAuthStore } from '../stores/auth'
-import { useMasterDataStore } from '../stores/masterData'
 import TicketListView from './TicketListView.vue'
 
 vi.mock('../api/tickets', async (loadOriginal) => ({
@@ -204,78 +203,6 @@ describe('TicketListView rendering', () => {
     const { wrapper } = await mountList()
     expect(wrapper.get('[data-testid="tickets-empty"]').text()).toBe(
       'No tickets on this page.',
-    )
-  })
-
-  it('shows scope-specific empty messages on /my-tickets', async () => {
-    const pinia = createPinia()
-    setActivePinia(pinia)
-    useAuthStore().user = {
-      id: 1,
-      name: 'Agent',
-      email: 'agent@example.test',
-      role: 'agent',
-      is_active: true,
-      created_at: '2026-08-25T00:00:00Z',
-    }
-    useMasterDataStore().statuses = [
-      {
-        id: 1,
-        name: 'New',
-        slug: 'new',
-        bucket: 'open',
-        color: '#3B82F6',
-        is_default: true,
-        is_terminal: false,
-        sort_order: 10,
-      },
-      {
-        id: 5,
-        name: 'Resolved',
-        slug: 'resolved',
-        bucket: 'done',
-        color: '#10B981',
-        is_default: false,
-        is_terminal: true,
-        sort_order: 50,
-      },
-    ]
-    useMasterDataStore().categories = [
-      {
-        id: 1,
-        name: 'Hardware',
-        slug: 'hardware',
-        color: '#111',
-        is_active: true,
-        sort_order: 1,
-      } as never,
-    ]
-    useMasterDataStore().priorities = [
-      {
-        id: 2,
-        name: 'Medium',
-        slug: 'medium',
-        level: 2,
-        color: '#F59E0B',
-        is_default: true,
-      },
-    ]
-    vi.mocked(listTickets).mockResolvedValue(paginated([]))
-    const router = createAppRouter(createMemoryHistory())
-    await router.push('/my-tickets')
-    await router.isReady()
-    const wrapper = mount(TicketListView, {
-      global: { plugins: [pinia, router] },
-    })
-    await flushPromises()
-    expect(wrapper.get('[data-testid="tickets-empty"]').text()).toBe(
-      'You have no open tickets.',
-    )
-
-    await wrapper.get('[data-testid="my-tickets-include-done"]').setValue(true)
-    await flushPromises()
-    expect(wrapper.get('[data-testid="tickets-empty"]').text()).toBe(
-      'You have no tickets.',
     )
   })
 })
