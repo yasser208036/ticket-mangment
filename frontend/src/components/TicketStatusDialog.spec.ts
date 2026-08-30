@@ -1,7 +1,7 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { AxiosError } from 'axios'
 import { createPinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { changeTicketStatus, getTicket } from '../api/tickets'
 import type { TicketDetail } from '../api/tickets'
 import type { Status } from '../api/statuses'
@@ -86,10 +86,11 @@ const ticket: TicketDetail = {
   allowed_transitions: [open, pending],
   resolution: null,
   reopen_count: 0,
+  my_pending_assignment_request: false,
   can: {
     update: true,
     assign: true,
-    claim: true,
+    request_assignment: true,
     change_status: true,
     escalate: true,
     delete: true,
@@ -97,11 +98,24 @@ const ticket: TicketDetail = {
   },
 }
 
+// The dialog is teleported into the real document.body, which -- unlike a
+// wrapper's own detached root -- survives past the end of a test unless
+// explicitly unmounted; each mount is tracked here so afterEach can remove it
+// and leave a clean body for the next test.
+let mounted: ReturnType<typeof mount> | undefined
+
 function mountDialog(overrides: Partial<TicketDetail> = {}) {
-  return mount(TicketStatusDialog, {
+  mounted = mount(TicketStatusDialog, {
     props: { ticket: { ...ticket, ...overrides } },
     global: { plugins: [createPinia()] },
   })
+  return mounted
+}
+
+// Query document.body directly rather than the wrapper, since the dialog's
+// content lands as a sibling of the wrapper's own root in the real DOM.
+function body() {
+  return new DOMWrapper(document.body)
 }
 
 describe('TicketStatusDialog', () => {
@@ -110,29 +124,34 @@ describe('TicketStatusDialog', () => {
     vi.mocked(getTicket).mockReset()
   })
 
+  afterEach(() => {
+    mounted?.unmount()
+    mounted = undefined
+  })
+
   it('renders one option per allowed_transitions entry and no others', () => {
-    const wrapper = mountDialog()
+    mountDialog()
     expect(
-      wrapper.findAll('[data-testid="ticket-status-select"] option'),
+      body().findAll('[data-testid="ticket-status-select"] option'),
     ).toHaveLength(3)
   })
 
   it('renders ticket-status-empty and no select when allowed_transitions is empty', () => {
-    const wrapper = mountDialog({ allowed_transitions: [] })
-    expect(wrapper.find('[data-testid="ticket-status-empty"]').exists()).toBe(
+    mountDialog({ allowed_transitions: [] })
+    expect(body().find('[data-testid="ticket-status-empty"]').exists()).toBe(
       true,
     )
-    expect(wrapper.find('[data-testid="ticket-status-select"]').exists()).toBe(
+    expect(body().find('[data-testid="ticket-status-select"]').exists()).toBe(
       false,
     )
   })
 
   it('disables confirm with nothing selected and enables it once an option is chosen', async () => {
-    const wrapper = mountDialog()
-    const confirm = () => wrapper.get('[data-testid="ticket-status-confirm"]')
+    mountDialog()
+    const confirm = () => body().get('[data-testid="ticket-status-confirm"]')
     expect(confirm().attributes('disabled')).toBeDefined()
 
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('2')
+    await body().get('[data-testid="ticket-status-select"]').setValue('2')
     expect(confirm().attributes('disabled')).toBeUndefined()
   })
 
@@ -152,8 +171,8 @@ describe('TicketStatusDialog', () => {
     })
 
     const wrapper = mountDialog()
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('2')
-    await wrapper.get('[data-testid="ticket-status-confirm"]').trigger('click')
+    await body().get('[data-testid="ticket-status-select"]').setValue('2')
+    await body().get('[data-testid="ticket-status-confirm"]').trigger('click')
     await flushPromises()
 
     expect(changeTicketStatus).toHaveBeenCalledWith(1, { status_id: 2 })
@@ -166,19 +185,19 @@ describe('TicketStatusDialog', () => {
     vi.mocked(changeTicketStatus).mockResolvedValue(ticket as never)
     vi.mocked(getTicket).mockResolvedValue(ticket)
 
-    const wrapper = mountDialog({ allowed_transitions: [resolved] })
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('5')
+    mountDialog({ allowed_transitions: [resolved] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('5')
     expect(
-      wrapper.find('[data-testid="ticket-status-resolution"]').exists(),
+      body().find('[data-testid="ticket-status-resolution"]').exists(),
     ).toBe(true)
-    expect(wrapper.find('[data-testid="ticket-status-reason"]').exists()).toBe(
+    expect(body().find('[data-testid="ticket-status-reason"]').exists()).toBe(
       false,
     )
 
-    await wrapper
+    await body()
       .get('[data-testid="ticket-status-resolution"]')
       .setValue('Fixed it after replacing the part.')
-    await wrapper.get('[data-testid="ticket-status-confirm"]').trigger('click')
+    await body().get('[data-testid="ticket-status-confirm"]').trigger('click')
     await flushPromises()
 
     expect(changeTicketStatus).toHaveBeenCalledWith(1, {
@@ -196,63 +215,63 @@ describe('TicketStatusDialog', () => {
         },
       } as never),
     )
-    const wrapper = mountDialog()
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('2')
-    await wrapper.get('[data-testid="ticket-status-confirm"]').trigger('click')
+    mountDialog()
+    await body().get('[data-testid="ticket-status-select"]').setValue('2')
+    await body().get('[data-testid="ticket-status-confirm"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="ticket-status-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-status-error"]').text()).toBe(
       'A ticket cannot move from New to Resolved.',
     )
-    expect(wrapper.find('[data-testid="ticket-status-dialog"]').exists()).toBe(
+    expect(body().find('[data-testid="ticket-status-dialog"]').exists()).toBe(
       true,
     )
   })
 
   it('a non-422 failure falls back to errorMessage and keeps the dialog mounted', async () => {
     vi.mocked(changeTicketStatus).mockRejectedValue(new Error('offline'))
-    const wrapper = mountDialog()
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('2')
-    await wrapper.get('[data-testid="ticket-status-confirm"]').trigger('click')
+    mountDialog()
+    await body().get('[data-testid="ticket-status-select"]').setValue('2')
+    await body().get('[data-testid="ticket-status-confirm"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="ticket-status-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-status-error"]').text()).toBe(
       'The API is unreachable.',
     )
   })
 
   it('cancel emits close and issues no request', async () => {
     const wrapper = mountDialog()
-    await wrapper.get('[data-testid="ticket-status-cancel"]').trigger('click')
+    await body().get('[data-testid="ticket-status-cancel"]').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
     expect(changeTicketStatus).not.toHaveBeenCalled()
   })
 
   it('disables confirm while the note is under 10 characters and shows the hint, then enables it at 10', async () => {
     const resolved = { ...open, id: 5, name: 'Resolved', slug: 'resolved' }
-    const wrapper = mountDialog({ allowed_transitions: [resolved] })
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('5')
-    const confirm = () => wrapper.get('[data-testid="ticket-status-confirm"]')
+    mountDialog({ allowed_transitions: [resolved] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('5')
+    const confirm = () => body().get('[data-testid="ticket-status-confirm"]')
     expect(confirm().attributes('disabled')).toBeDefined()
     expect(
-      wrapper.find('[data-testid="ticket-status-resolution-hint"]').exists(),
+      body().find('[data-testid="ticket-status-resolution-hint"]').exists(),
     ).toBe(true)
 
-    await wrapper
+    await body()
       .get('[data-testid="ticket-status-resolution"]')
       .setValue('0123456789')
     expect(confirm().attributes('disabled')).toBeUndefined()
     expect(
-      wrapper.find('[data-testid="ticket-status-resolution-hint"]').exists(),
+      body().find('[data-testid="ticket-status-resolution-hint"]').exists(),
     ).toBe(false)
   })
 
   it('a non-resolving move sends no resolution key at all', async () => {
     vi.mocked(changeTicketStatus).mockResolvedValue(ticket)
     vi.mocked(getTicket).mockResolvedValue(ticket)
-    const wrapper = mountDialog()
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('2')
-    await wrapper.get('[data-testid="ticket-status-confirm"]').trigger('click')
+    mountDialog()
+    await body().get('[data-testid="ticket-status-select"]').setValue('2')
+    await body().get('[data-testid="ticket-status-confirm"]').trigger('click')
     await flushPromises()
 
     expect(changeTicketStatus).toHaveBeenCalledWith(1, { status_id: 2 })
@@ -260,21 +279,21 @@ describe('TicketStatusDialog', () => {
 
   it('switching the selection away from Resolved and back keeps the typed note', async () => {
     const resolved = { ...open, id: 5, name: 'Resolved', slug: 'resolved' }
-    const wrapper = mountDialog({ allowed_transitions: [pending, resolved] })
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('5')
-    await wrapper
+    mountDialog({ allowed_transitions: [pending, resolved] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('5')
+    await body()
       .get('[data-testid="ticket-status-resolution"]')
       .setValue('A note worth keeping around.')
 
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('4')
+    await body().get('[data-testid="ticket-status-select"]').setValue('4')
     expect(
-      wrapper.find('[data-testid="ticket-status-resolution"]').exists(),
+      body().find('[data-testid="ticket-status-resolution"]').exists(),
     ).toBe(false)
 
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('5')
+    await body().get('[data-testid="ticket-status-select"]').setValue('5')
     expect(
       (
-        wrapper.get('[data-testid="ticket-status-resolution"]')
+        body().get('[data-testid="ticket-status-resolution"]')
           .element as HTMLTextAreaElement
       ).value,
     ).toBe('A note worth keeping around.')
@@ -292,18 +311,18 @@ describe('TicketStatusDialog', () => {
         },
       } as never),
     )
-    const wrapper = mountDialog({ allowed_transitions: [resolved] })
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('5')
-    await wrapper
+    mountDialog({ allowed_transitions: [resolved] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('5')
+    await body()
       .get('[data-testid="ticket-status-resolution"]')
       .setValue('Long enough to pass the client check.')
-    await wrapper.get('[data-testid="ticket-status-confirm"]').trigger('click')
+    await body().get('[data-testid="ticket-status-confirm"]').trigger('click')
     await flushPromises()
 
     expect(
-      wrapper.get('[data-testid="ticket-status-resolution-error"]').text(),
+      body().get('[data-testid="ticket-status-resolution-error"]').text(),
     ).toBe('The resolution note must be at least 10 characters.')
-    expect(wrapper.find('[data-testid="ticket-status-dialog"]').exists()).toBe(
+    expect(body().find('[data-testid="ticket-status-dialog"]').exists()).toBe(
       true,
     )
   })
@@ -311,41 +330,40 @@ describe('TicketStatusDialog', () => {
   it('selecting Reopened reveals the reason field and hides the resolution field, and vice versa', async () => {
     const reopened = { ...open, id: 7, name: 'Reopened', slug: 'reopened' }
     const resolved = { ...open, id: 5, name: 'Resolved', slug: 'resolved' }
-    const wrapper = mountDialog({ allowed_transitions: [reopened, resolved] })
-
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('7')
-    expect(wrapper.find('[data-testid="ticket-status-reason"]').exists()).toBe(
+    mountDialog({ allowed_transitions: [reopened, resolved] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('7')
+    expect(body().find('[data-testid="ticket-status-reason"]').exists()).toBe(
       true,
     )
     expect(
-      wrapper.find('[data-testid="ticket-status-resolution"]').exists(),
+      body().find('[data-testid="ticket-status-resolution"]').exists(),
     ).toBe(false)
 
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('5')
-    expect(wrapper.find('[data-testid="ticket-status-reason"]').exists()).toBe(
+    await body().get('[data-testid="ticket-status-select"]').setValue('5')
+    expect(body().find('[data-testid="ticket-status-reason"]').exists()).toBe(
       false,
     )
     expect(
-      wrapper.find('[data-testid="ticket-status-resolution"]').exists(),
+      body().find('[data-testid="ticket-status-resolution"]').exists(),
     ).toBe(true)
   })
 
   it('disables confirm while the reason is under 10 characters and shows the hint, then enables it at 10', async () => {
     const reopened = { ...open, id: 7, name: 'Reopened', slug: 'reopened' }
-    const wrapper = mountDialog({ allowed_transitions: [reopened] })
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('7')
-    const confirm = () => wrapper.get('[data-testid="ticket-status-confirm"]')
+    mountDialog({ allowed_transitions: [reopened] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('7')
+    const confirm = () => body().get('[data-testid="ticket-status-confirm"]')
     expect(confirm().attributes('disabled')).toBeDefined()
     expect(
-      wrapper.find('[data-testid="ticket-status-reason-hint"]').exists(),
+      body().find('[data-testid="ticket-status-reason-hint"]').exists(),
     ).toBe(true)
 
-    await wrapper
+    await body()
       .get('[data-testid="ticket-status-reason"]')
       .setValue('0123456789')
     expect(confirm().attributes('disabled')).toBeUndefined()
     expect(
-      wrapper.find('[data-testid="ticket-status-reason-hint"]').exists(),
+      body().find('[data-testid="ticket-status-reason-hint"]').exists(),
     ).toBe(false)
   })
 
@@ -353,12 +371,12 @@ describe('TicketStatusDialog', () => {
     const reopened = { ...open, id: 7, name: 'Reopened', slug: 'reopened' }
     vi.mocked(changeTicketStatus).mockResolvedValue(ticket)
     vi.mocked(getTicket).mockResolvedValue(ticket)
-    const wrapper = mountDialog({ allowed_transitions: [reopened] })
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('7')
-    await wrapper
+    mountDialog({ allowed_transitions: [reopened] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('7')
+    await body()
       .get('[data-testid="ticket-status-reason"]')
       .setValue('The same disk failed a second time.')
-    await wrapper.get('[data-testid="ticket-status-confirm"]').trigger('click')
+    await body().get('[data-testid="ticket-status-confirm"]').trigger('click')
     await flushPromises()
 
     expect(changeTicketStatus).toHaveBeenCalledWith(1, {
@@ -369,21 +387,21 @@ describe('TicketStatusDialog', () => {
 
   it('switching the selection away from Reopened and back keeps the typed reason', async () => {
     const reopened = { ...open, id: 7, name: 'Reopened', slug: 'reopened' }
-    const wrapper = mountDialog({ allowed_transitions: [pending, reopened] })
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('7')
-    await wrapper
+    mountDialog({ allowed_transitions: [pending, reopened] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('7')
+    await body()
       .get('[data-testid="ticket-status-reason"]')
       .setValue('A reason worth keeping around.')
 
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('4')
-    expect(wrapper.find('[data-testid="ticket-status-reason"]').exists()).toBe(
+    await body().get('[data-testid="ticket-status-select"]').setValue('4')
+    expect(body().find('[data-testid="ticket-status-reason"]').exists()).toBe(
       false,
     )
 
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('7')
+    await body().get('[data-testid="ticket-status-select"]').setValue('7')
     expect(
       (
-        wrapper.get('[data-testid="ticket-status-reason"]')
+        body().get('[data-testid="ticket-status-reason"]')
           .element as HTMLTextAreaElement
       ).value,
     ).toBe('A reason worth keeping around.')
@@ -401,18 +419,18 @@ describe('TicketStatusDialog', () => {
         },
       } as never),
     )
-    const wrapper = mountDialog({ allowed_transitions: [reopened] })
-    await wrapper.get('[data-testid="ticket-status-select"]').setValue('7')
-    await wrapper
+    mountDialog({ allowed_transitions: [reopened] })
+    await body().get('[data-testid="ticket-status-select"]').setValue('7')
+    await body()
       .get('[data-testid="ticket-status-reason"]')
       .setValue('Long enough to pass the client check.')
-    await wrapper.get('[data-testid="ticket-status-confirm"]').trigger('click')
+    await body().get('[data-testid="ticket-status-confirm"]').trigger('click')
     await flushPromises()
 
     expect(
-      wrapper.get('[data-testid="ticket-status-reason-error"]').text(),
+      body().get('[data-testid="ticket-status-reason-error"]').text(),
     ).toBe('The reopen reason must be at least 10 characters.')
-    expect(wrapper.find('[data-testid="ticket-status-dialog"]').exists()).toBe(
+    expect(body().find('[data-testid="ticket-status-dialog"]').exists()).toBe(
       true,
     )
   })

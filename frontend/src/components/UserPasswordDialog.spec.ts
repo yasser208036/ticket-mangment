@@ -1,8 +1,8 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { AxiosError } from 'axios'
 import type { InternalAxiosRequestConfig } from 'axios'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetUserPassword } from '../api/users'
 import type { AdminUser } from '../api/users'
 import UserPasswordDialog from './UserPasswordDialog.vue'
@@ -33,18 +33,29 @@ function failure(status: number, data: unknown): AxiosError {
   return error
 }
 
+// The dialog is teleported into the real document.body, which -- unlike a
+// wrapper's own detached root -- survives past the end of a test unless
+// explicitly unmounted; each mount is tracked here so afterEach can remove it
+// and leave a clean body for the next test.
+let mounted: ReturnType<typeof mount> | undefined
+
 function render() {
-  return mount(UserPasswordDialog, { props: { user: target } })
+  mounted = mount(UserPasswordDialog, { props: { user: target } })
+  return mounted
 }
 
-async function fillAndSubmit(wrapper: ReturnType<typeof render>) {
-  await wrapper
-    .get('[data-testid="user-password-new"]')
-    .setValue('new-secret-1')
-  await wrapper
+// Query document.body directly rather than the wrapper, since the dialog's
+// content lands as a sibling of the wrapper's own root in the real DOM.
+function body() {
+  return new DOMWrapper(document.body)
+}
+
+async function fillAndSubmit() {
+  await body().get('[data-testid="user-password-new"]').setValue('new-secret-1')
+  await body()
     .get('[data-testid="user-password-current"]')
     .setValue('admin-secret')
-  await wrapper.get('[data-testid="user-password-form"]').trigger('submit')
+  await body().get('[data-testid="user-password-form"]').trigger('submit')
   await flushPromises()
 }
 
@@ -54,21 +65,26 @@ describe('UserPasswordDialog', () => {
     vi.mocked(resetUserPassword).mockReset().mockResolvedValue()
   })
 
+  afterEach(() => {
+    mounted?.unmount()
+    mounted = undefined
+  })
+
   it('starts with both fields empty', () => {
-    const wrapper = render()
+    render()
     expect(
-      wrapper.get<HTMLInputElement>('[data-testid="user-password-new"]').element
+      body().get<HTMLInputElement>('[data-testid="user-password-new"]').element
         .value,
     ).toBe('')
     expect(
-      wrapper.get<HTMLInputElement>('[data-testid="user-password-current"]')
+      body().get<HTMLInputElement>('[data-testid="user-password-current"]')
         .element.value,
     ).toBe('')
   })
 
   it('submits the new password and the admin own password', async () => {
     const wrapper = render()
-    await fillAndSubmit(wrapper)
+    await fillAndSubmit()
     expect(resetUserPassword).toHaveBeenCalledWith(3, {
       password: 'new-secret-1',
       current_password: 'admin-secret',
@@ -84,14 +100,12 @@ describe('UserPasswordDialog', () => {
       }),
     )
     const wrapper = render()
-    await fillAndSubmit(wrapper)
+    await fillAndSubmit()
     expect(
-      wrapper
-        .get('[data-testid="user-password-error-current_password"]')
-        .text(),
+      body().get('[data-testid="user-password-error-current_password"]').text(),
     ).toBe('The password is incorrect.')
     expect(
-      wrapper.find('[data-testid="user-password-error-password"]').exists(),
+      body().find('[data-testid="user-password-error-password"]').exists(),
     ).toBe(false)
     expect(wrapper.emitted('saved')).toBeUndefined()
   })
@@ -105,10 +119,10 @@ describe('UserPasswordDialog', () => {
         },
       }),
     )
-    const wrapper = render()
-    await fillAndSubmit(wrapper)
+    render()
+    await fillAndSubmit()
     expect(
-      wrapper.get('[data-testid="user-password-error-password"]').text(),
+      body().get('[data-testid="user-password-error-password"]').text(),
     ).toBe('The password field must be at least 8 characters.')
   })
 
@@ -116,16 +130,16 @@ describe('UserPasswordDialog', () => {
     vi.mocked(resetUserPassword).mockRejectedValue(
       failure(403, { message: 'This action is unauthorized.' }),
     )
-    const wrapper = render()
-    await fillAndSubmit(wrapper)
-    expect(wrapper.get('[data-testid="user-password-error"]').text()).toBe(
+    render()
+    await fillAndSubmit()
+    expect(body().get('[data-testid="user-password-error"]').text()).toBe(
       'You do not have permission to do that.',
     )
   })
 
   it('cancels without calling the API', async () => {
     const wrapper = render()
-    await wrapper.get('[data-testid="user-password-cancel"]').trigger('click')
+    await body().get('[data-testid="user-password-cancel"]').trigger('click')
     expect(resetUserPassword).not.toHaveBeenCalled()
     expect(wrapper.emitted('close')).toHaveLength(1)
   })

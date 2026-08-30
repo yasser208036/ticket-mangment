@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { errorMessage } from '../api/errors'
 import type { AdminUser, UserDeleteBlocked } from '../api/users'
 import { useUsersStore } from '../stores/users'
+import BaseDialog from './BaseDialog.vue'
 const props = defineProps<{
   user: AdminUser
   /** Null when nothing blocks the delete — a plain confirmation. */
@@ -23,13 +24,8 @@ async function confirmDelete(): Promise<void> {
 }
 </script>
 <template>
-  <div
-    data-testid="user-delete"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
-  >
-    <div
-      class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150"
-    >
+  <BaseDialog testid="user-delete">
+    <div class="space-y-4">
       <div class="flex items-start gap-3">
         <div
           class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600"
@@ -134,5 +130,5 @@ async function confirmDelete(): Promise<void> {
         </button>
       </div>
     </div>
-  </div>
+  </BaseDialog>
 </template>

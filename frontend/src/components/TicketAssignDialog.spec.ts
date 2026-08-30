@@ -1,8 +1,8 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { AxiosError } from 'axios'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Pinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { assignTicket, getTicket } from '../api/tickets'
 import type { TicketDetail } from '../api/tickets'
 import { listUsers } from '../api/users'
@@ -100,10 +100,11 @@ const ticket: TicketDetail = {
   allowed_transitions: [],
   resolution: null,
   reopen_count: 0,
+  my_pending_assignment_request: false,
   can: {
     update: true,
     assign: true,
-    claim: true,
+    request_assignment: true,
     change_status: true,
     escalate: true,
     delete: true,
@@ -111,26 +112,39 @@ const ticket: TicketDetail = {
   },
 }
 
+// The dialog is teleported into the real document.body, which -- unlike a
+// wrapper's own detached root -- survives past the end of a test unless
+// explicitly unmounted; each mount is tracked here so afterEach can remove it
+// and leave a clean body for the next test. A test that mounts more than once
+// (to compare two states) must unmount the first instance itself before
+// mounting the second, or the first's teleported content leaks into it.
+let mounted: ReturnType<typeof mount> | undefined
+
 function mountDialog(
   overrides: Partial<TicketDetail> = {},
   pinia: Pinia = createPinia(),
 ) {
-  return mount(TicketAssignDialog, {
+  mounted = mount(TicketAssignDialog, {
     props: { ticket: { ...ticket, ...overrides } },
     global: { plugins: [pinia] },
   })
+  return mounted
+}
+
+// Query document.body directly rather than the wrapper, since the dialog's
+// content lands as a sibling of the wrapper's own root in the real DOM.
+function body() {
+  return new DOMWrapper(document.body)
 }
 
 /**
  * Pick the first real agent. The option values are numbers bound through
  * `:value`, so they live on the element's `_value` rather than its `value`
- * attribute — driving `selectedIndex` and firing `change` is what v-model
+ * attribute -- driving `selectedIndex` and firing `change` is what v-model
  * actually listens to.
  */
-async function chooseAgent(
-  wrapper: ReturnType<typeof mountDialog>,
-): Promise<void> {
-  const select = wrapper.get('[data-testid="ticket-assign-select"]')
+async function chooseAgent(): Promise<void> {
+  const select = body().get('[data-testid="ticket-assign-select"]')
   ;(select.element as HTMLSelectElement).selectedIndex = 1
   await select.trigger('change')
 }
@@ -158,6 +172,11 @@ describe('TicketAssignDialog', () => {
     vi.mocked(listUsers).mockResolvedValue(agentPage([agent], 1))
   })
 
+  afterEach(() => {
+    mounted?.unmount()
+    mounted = undefined
+  })
+
   it('asks only for active agents, so an admin can never be offered', async () => {
     await mountLoaded()
     expect(listUsers).toHaveBeenCalledWith({
@@ -170,12 +189,12 @@ describe('TicketAssignDialog', () => {
 
   it('caps the reason at 500 characters and passes it through as the third argument', async () => {
     const wrapper = await mountLoaded()
-    const reason = wrapper.get('[data-testid="ticket-assign-reason"]')
+    const reason = body().get('[data-testid="ticket-assign-reason"]')
     expect(reason.attributes('maxlength')).toBe('500')
 
     await reason.setValue('Ahmed is on leave')
-    await chooseAgent(wrapper)
-    await wrapper.get('[data-testid="ticket-assign-confirm"]').trigger('click')
+    await chooseAgent()
+    await body().get('[data-testid="ticket-assign-confirm"]').trigger('click')
     await flushPromises()
 
     expect(assignTicket).toHaveBeenCalledWith(1, agent.id, 'Ahmed is on leave')
@@ -183,20 +202,20 @@ describe('TicketAssignDialog', () => {
   })
 
   it('omits a blank reason rather than sending an empty string', async () => {
-    const wrapper = await mountLoaded()
-    await chooseAgent(wrapper)
-    await wrapper.get('[data-testid="ticket-assign-confirm"]').trigger('click')
+    await mountLoaded()
+    await chooseAgent()
+    await body().get('[data-testid="ticket-assign-confirm"]').trigger('click')
     await flushPromises()
 
     expect(assignTicket).toHaveBeenCalledWith(1, agent.id, undefined)
   })
 
   it('keeps confirm disabled until an agent is chosen', async () => {
-    const wrapper = await mountLoaded()
-    const confirm = () => wrapper.get('[data-testid="ticket-assign-confirm"]')
+    await mountLoaded()
+    const confirm = () => body().get('[data-testid="ticket-assign-confirm"]')
     expect(confirm().attributes('disabled')).toBeDefined()
 
-    await chooseAgent(wrapper)
+    await chooseAgent()
     expect(confirm().attributes('disabled')).toBeUndefined()
   })
 
@@ -206,21 +225,19 @@ describe('TicketAssignDialog', () => {
    * the reason. Return to queue stays available; it is a real change.
    */
   it('keeps confirm disabled while the pre-selected assignee is unchanged', async () => {
-    const wrapper = await mountLoaded({ assignee: agent })
-    await wrapper
-      .get('[data-testid="ticket-assign-reason"]')
-      .setValue('Context')
+    await mountLoaded({ assignee: agent })
+    await body().get('[data-testid="ticket-assign-reason"]').setValue('Context')
     expect(
-      wrapper
+      body()
         .get('[data-testid="ticket-assign-confirm"]')
         .attributes('disabled'),
     ).toBeDefined()
 
-    await wrapper.get('[data-testid="ticket-assign-confirm"]').trigger('click')
+    await body().get('[data-testid="ticket-assign-confirm"]').trigger('click')
     await flushPromises()
     expect(assignTicket).not.toHaveBeenCalled()
     expect(
-      wrapper
+      body()
         .get('[data-testid="ticket-assign-unassign"]')
         .attributes('disabled'),
     ).toBeUndefined()
@@ -235,25 +252,25 @@ describe('TicketAssignDialog', () => {
     vi.mocked(listUsers)
       .mockResolvedValueOnce(agentPage([agent], 2, 1))
       .mockResolvedValueOnce(agentPage([overflow], 2, 2))
-    const wrapper = await mountLoaded()
+    await mountLoaded()
 
     expect(listUsers).toHaveBeenCalledTimes(2)
     expect(vi.mocked(listUsers).mock.calls[1]?.[0]).toMatchObject({ page: 2 })
-    expect(wrapper.findAll('option').map((option) => option.text())).toEqual([
-      'Choose an agent…',
-      'Nadia',
-      'Omar',
-    ])
+    expect(
+      body()
+        .findAll('option')
+        .map((option) => option.text()),
+    ).toEqual(['Choose an agent…', 'Nadia', 'Omar'])
   })
 
   it('keeps the picker empty when a later page fails, not half a roster', async () => {
     vi.mocked(listUsers)
       .mockResolvedValueOnce(agentPage([agent], 2, 1))
       .mockRejectedValueOnce(new Error('offline'))
-    const wrapper = await mountLoaded()
+    await mountLoaded()
 
-    expect(wrapper.findAll('option')).toHaveLength(1)
-    expect(wrapper.get('[data-testid="ticket-assign-error"]').text()).toBe(
+    expect(body().findAll('option')).toHaveLength(1)
+    expect(body().get('[data-testid="ticket-assign-error"]').text()).toBe(
       'The API is unreachable.',
     )
   })
@@ -262,34 +279,36 @@ describe('TicketAssignDialog', () => {
     // One shared store across both mounts -- the point is that `agents` outlives
     // the dialog, so a failed reopen must not keep offering the earlier fetch.
     const pinia = createPinia()
-    const first = await mountLoaded({}, pinia)
-    expect(first.findAll('option')).toHaveLength(2)
+    await mountLoaded({}, pinia)
+    expect(body().findAll('option')).toHaveLength(2)
+    mounted?.unmount()
 
     vi.mocked(listUsers).mockRejectedValue(new Error('offline'))
-    const second = await mountLoaded({}, pinia)
+    await mountLoaded({}, pinia)
     // Only the placeholder: a stale agent may since have been deactivated, and
     // offering them would 422 on submit.
-    expect(second.findAll('option')).toHaveLength(1)
+    expect(body().findAll('option')).toHaveLength(1)
   })
 
   it('offers Return to queue only when the ticket is assigned', async () => {
-    const unassigned = await mountLoaded()
-    expect(
-      unassigned.find('[data-testid="ticket-assign-unassign"]').exists(),
-    ).toBe(false)
+    await mountLoaded()
+    expect(body().find('[data-testid="ticket-assign-unassign"]').exists()).toBe(
+      false,
+    )
+    mounted?.unmount()
 
-    const held = await mountLoaded({ assignee: agent })
-    expect(held.find('[data-testid="ticket-assign-unassign"]').exists()).toBe(
+    await mountLoaded({ assignee: agent })
+    expect(body().find('[data-testid="ticket-assign-unassign"]').exists()).toBe(
       true,
     )
   })
 
   it('sends exactly null when returning a ticket to the queue', async () => {
-    const wrapper = await mountLoaded({ assignee: agent })
-    await wrapper
+    await mountLoaded({ assignee: agent })
+    await body()
       .get('[data-testid="ticket-assign-reason"]')
       .setValue('Handover')
-    await wrapper.get('[data-testid="ticket-assign-unassign"]').trigger('click')
+    await body().get('[data-testid="ticket-assign-unassign"]').trigger('click')
     await flushPromises()
 
     // The second argument must be null, never '' or undefined: the server's
@@ -310,13 +329,13 @@ describe('TicketAssignDialog', () => {
       } as never),
     )
     const wrapper = await mountLoaded({ assignee: agent })
-    await wrapper.get('[data-testid="ticket-assign-unassign"]').trigger('click')
+    await body().get('[data-testid="ticket-assign-unassign"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="ticket-assign-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-assign-error"]').text()).toBe(
       'Keep the reason to 500 characters or fewer.',
     )
-    expect(wrapper.find('[data-testid="ticket-assign-dialog"]').exists()).toBe(
+    expect(body().find('[data-testid="ticket-assign-dialog"]').exists()).toBe(
       true,
     )
     expect(wrapper.emitted('assigned')).toBeUndefined()
@@ -324,12 +343,12 @@ describe('TicketAssignDialog', () => {
 
   it('says so when the agent list cannot be loaded, rather than looking empty', async () => {
     vi.mocked(listUsers).mockRejectedValue(new Error('offline'))
-    const wrapper = await mountLoaded()
+    await mountLoaded()
 
-    expect(wrapper.get('[data-testid="ticket-assign-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-assign-error"]').text()).toBe(
       'The API is unreachable.',
     )
-    expect(wrapper.findAll('option')).toHaveLength(1)
+    expect(body().findAll('option')).toHaveLength(1)
   })
 
   it('renders a 422 under assigned_to', async () => {
@@ -341,22 +360,22 @@ describe('TicketAssignDialog', () => {
         },
       } as never),
     )
-    const wrapper = await mountLoaded()
-    await chooseAgent(wrapper)
-    await wrapper.get('[data-testid="ticket-assign-confirm"]').trigger('click')
+    await mountLoaded()
+    await chooseAgent()
+    await body().get('[data-testid="ticket-assign-confirm"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="ticket-assign-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-assign-error"]').text()).toBe(
       'That user is not an active agent.',
     )
   })
 
   it('preselects the current assignee and names them in the header', async () => {
-    const wrapper = await mountLoaded({ assignee: agent })
-    expect(wrapper.get('[data-testid="ticket-assign-current"]').text()).toBe(
+    await mountLoaded({ assignee: agent })
+    expect(body().get('[data-testid="ticket-assign-current"]').text()).toBe(
       'Currently Nadia',
     )
-    const options = wrapper.findAll('option')
+    const options = body().findAll('option')
     expect((options[1]?.element as HTMLOptionElement).selected).toBe(true)
   })
 })

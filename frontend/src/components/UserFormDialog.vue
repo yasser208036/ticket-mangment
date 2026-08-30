@@ -4,7 +4,9 @@ import { computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useUsersStore } from '../stores/users'
 import { validationErrors, errorMessage } from '../api/errors'
+import type { UserRole } from '../api/auth'
 import type { AdminUser, CreateUserPayload } from '../api/users'
+import BaseDialog from './BaseDialog.vue'
 const props = defineProps<{ user?: AdminUser }>()
 const emit = defineEmits<{ saved: []; close: [] }>()
 const store = useUsersStore()
@@ -14,7 +16,7 @@ const form = reactive({
   name: props.user?.name ?? '',
   email: props.user?.email ?? '',
   password: '',
-  role: props.user?.role ?? ('agent' as 'admin' | 'agent'),
+  role: props.user?.role ?? ('agent' as UserRole),
   is_active: props.user?.is_active ?? true,
 })
 const errors = ref<Record<string, string[]>>({})
@@ -37,12 +39,8 @@ async function submit(): Promise<void> {
 }
 </script>
 <template>
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
-  >
-    <div
-      class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
-    >
+  <BaseDialog max-width="lg">
+    <div class="space-y-5">
       <div
         class="flex items-center justify-between border-b border-slate-100 pb-3"
       >
@@ -137,6 +135,7 @@ async function submit(): Promise<void> {
               data-testid="user-form-role"
               class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white disabled:opacity-50"
             >
+              <option value="user">Requester</option>
               <option value="agent">Support Agent</option>
               <option value="admin">Administrator</option>
             </select>
@@ -194,5 +193,5 @@ async function submit(): Promise<void> {
         </div>
       </form>
     </div>
-  </div>
+  </BaseDialog>
 </template>

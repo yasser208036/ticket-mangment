@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { validationErrors, errorMessage } from '../api/errors'
 import { useCategoriesStore } from '../stores/categories'
 import type { Category, CreateCategoryPayload } from '../api/categories'
+import BaseDialog from './BaseDialog.vue'
 const props = defineProps<{ category?: Category }>()
 const emit = defineEmits<{ saved: []; close: [] }>()
 const store = useCategoriesStore()
@@ -28,12 +29,8 @@ async function submit() {
 }
 </script>
 <template>
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
-  >
-    <div
-      class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
-    >
+  <BaseDialog max-width="lg">
+    <div class="space-y-5">
       <div
         class="flex items-center justify-between border-b border-slate-100 pb-3"
       >
@@ -190,5 +187,5 @@ async function submit() {
         </div>
       </form>
     </div>
-  </div>
+  </BaseDialog>
 </template>

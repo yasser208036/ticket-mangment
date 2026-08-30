@@ -1,7 +1,7 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { AxiosError } from 'axios'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { escalateTicket, getTicket } from '../api/tickets'
 import type { TicketDetail } from '../api/tickets'
 import TicketEscalateDialog from './TicketEscalateDialog.vue'
@@ -64,10 +64,11 @@ const ticket: TicketDetail = {
   allowed_transitions: [],
   resolution: null,
   reopen_count: 0,
+  my_pending_assignment_request: false,
   can: {
     update: true,
     assign: true,
-    claim: true,
+    request_assignment: true,
     change_status: true,
     escalate: true,
     delete: true,
@@ -75,11 +76,24 @@ const ticket: TicketDetail = {
   },
 }
 
+// The dialog is teleported into the real document.body, which -- unlike a
+// wrapper's own detached root -- survives past the end of a test unless
+// explicitly unmounted; each mount is tracked here so afterEach can remove it
+// and leave a clean body for the next test.
+let mounted: ReturnType<typeof mount> | undefined
+
 function mountDialog(overrides: Partial<TicketDetail> = {}) {
-  return mount(TicketEscalateDialog, {
+  mounted = mount(TicketEscalateDialog, {
     props: { ticket: { ...ticket, ...overrides } },
     global: { plugins: [createPinia()] },
   })
+  return mounted
+}
+
+// Query document.body directly rather than the wrapper, since the dialog's
+// content lands as a sibling of the wrapper's own root in the real DOM.
+function body() {
+  return new DOMWrapper(document.body)
 }
 
 describe('TicketEscalateDialog', () => {
@@ -90,19 +104,24 @@ describe('TicketEscalateDialog', () => {
     vi.mocked(getTicket).mockResolvedValue(ticket)
   })
 
+  afterEach(() => {
+    mounted?.unmount()
+    mounted = undefined
+  })
+
   it('disables confirm under 10 characters and enables it at 10', async () => {
-    const wrapper = mountDialog()
-    const confirm = () => wrapper.get('[data-testid="ticket-escalate-confirm"]')
+    mountDialog()
+    const confirm = () => body().get('[data-testid="ticket-escalate-confirm"]')
     expect(confirm().attributes('disabled')).toBeDefined()
-    expect(wrapper.find('[data-testid="ticket-escalate-hint"]').exists()).toBe(
+    expect(body().find('[data-testid="ticket-escalate-hint"]').exists()).toBe(
       true,
     )
 
-    await wrapper
+    await body()
       .get('[data-testid="ticket-escalate-reason"]')
       .setValue('0123456789')
     expect(confirm().attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('[data-testid="ticket-escalate-hint"]').exists()).toBe(
+    expect(body().find('[data-testid="ticket-escalate-hint"]').exists()).toBe(
       false,
     )
   })
@@ -123,17 +142,38 @@ describe('TicketEscalateDialog', () => {
     })
 
     const wrapper = mountDialog()
-    await wrapper
+    await body()
       .get('[data-testid="ticket-escalate-reason"]')
       .setValue('A good enough reason.')
-    await wrapper
-      .get('[data-testid="ticket-escalate-confirm"]')
-      .trigger('click')
+    await body().get('[data-testid="ticket-escalate-confirm"]').trigger('click')
     await flushPromises()
 
     expect(escalateTicket).toHaveBeenCalledWith(1, 'A good enough reason.')
     expect(calls).toEqual(['escalate', 'get'])
     expect(wrapper.emitted('escalated')).toHaveLength(1)
+  })
+
+  it('a 403 on the post-escalate refetch still emits escalated, with no error shown', async () => {
+    vi.mocked(escalateTicket).mockResolvedValue({
+      ...ticket,
+      escalation_level: 1,
+    })
+    vi.mocked(getTicket).mockRejectedValue(
+      new AxiosError('e', undefined, undefined, undefined, {
+        status: 403,
+      } as never),
+    )
+    const wrapper = mountDialog()
+    await body()
+      .get('[data-testid="ticket-escalate-reason"]')
+      .setValue('A good enough reason.')
+    await body().get('[data-testid="ticket-escalate-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('escalated')).toHaveLength(1)
+    expect(body().find('[data-testid="ticket-escalate-error"]').exists()).toBe(
+      false,
+    )
   })
 
   it('renders a 422 under status in the error element', async () => {
@@ -145,20 +185,18 @@ describe('TicketEscalateDialog', () => {
         },
       } as never),
     )
-    const wrapper = mountDialog()
-    await wrapper
+    mountDialog()
+    await body()
       .get('[data-testid="ticket-escalate-reason"]')
       .setValue('A good enough reason.')
-    await wrapper
-      .get('[data-testid="ticket-escalate-confirm"]')
-      .trigger('click')
+    await body().get('[data-testid="ticket-escalate-confirm"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="ticket-escalate-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-escalate-error"]').text()).toBe(
       'A Resolved ticket cannot be escalated.',
     )
-    expect(
-      wrapper.find('[data-testid="ticket-escalate-dialog"]').exists(),
-    ).toBe(true)
+    expect(body().find('[data-testid="ticket-escalate-dialog"]').exists()).toBe(
+      true,
+    )
   })
 
   it('renders a 422 under assigned_to in the error element', async () => {
@@ -174,15 +212,13 @@ describe('TicketEscalateDialog', () => {
         },
       } as never),
     )
-    const wrapper = mountDialog()
-    await wrapper
+    mountDialog()
+    await body()
       .get('[data-testid="ticket-escalate-reason"]')
       .setValue('A good enough reason.')
-    await wrapper
-      .get('[data-testid="ticket-escalate-confirm"]')
-      .trigger('click')
+    await body().get('[data-testid="ticket-escalate-confirm"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="ticket-escalate-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-escalate-error"]').text()).toBe(
       'There is no active administrator to escalate to. Activate an admin account first.',
     )
   })
@@ -198,53 +234,49 @@ describe('TicketEscalateDialog', () => {
         },
       } as never),
     )
-    const wrapper = mountDialog()
-    await wrapper
+    mountDialog()
+    await body()
       .get('[data-testid="ticket-escalate-reason"]')
       .setValue('A good enough reason.')
-    await wrapper
-      .get('[data-testid="ticket-escalate-confirm"]')
-      .trigger('click')
+    await body().get('[data-testid="ticket-escalate-confirm"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="ticket-escalate-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-escalate-error"]').text()).toBe(
       'The escalation reason must be at least 10 characters.',
     )
   })
 
   it('falls back to errorMessage for a non-422 failure and stays mounted', async () => {
     vi.mocked(escalateTicket).mockRejectedValue(new Error('offline'))
-    const wrapper = mountDialog()
-    await wrapper
+    mountDialog()
+    await body()
       .get('[data-testid="ticket-escalate-reason"]')
       .setValue('A good enough reason.')
-    await wrapper
-      .get('[data-testid="ticket-escalate-confirm"]')
-      .trigger('click')
+    await body().get('[data-testid="ticket-escalate-confirm"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="ticket-escalate-error"]').text()).toBe(
+    expect(body().get('[data-testid="ticket-escalate-error"]').text()).toBe(
       'The API is unreachable.',
     )
-    expect(
-      wrapper.find('[data-testid="ticket-escalate-dialog"]').exists(),
-    ).toBe(true)
+    expect(body().find('[data-testid="ticket-escalate-dialog"]').exists()).toBe(
+      true,
+    )
   })
 
   it('shows the current level when above zero and hides it at zero', () => {
-    expect(
-      mountDialog({ escalation_level: 0 })
-        .find('[data-testid="ticket-escalate-level"]')
-        .exists(),
-    ).toBe(false)
-    expect(
-      mountDialog({ escalation_level: 2 })
-        .get('[data-testid="ticket-escalate-level"]')
-        .text(),
-    ).toBe('Currently level 2')
+    mountDialog({ escalation_level: 0 })
+    expect(body().find('[data-testid="ticket-escalate-level"]').exists()).toBe(
+      false,
+    )
+    mounted?.unmount()
+
+    mountDialog({ escalation_level: 2 })
+    expect(body().get('[data-testid="ticket-escalate-level"]').text()).toBe(
+      'Currently level 2',
+    )
   })
 
   it('cancel emits close and issues no request', async () => {
     const wrapper = mountDialog()
-    await wrapper.get('[data-testid="ticket-escalate-cancel"]').trigger('click')
+    await body().get('[data-testid="ticket-escalate-cancel"]').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
     expect(escalateTicket).not.toHaveBeenCalled()
   })

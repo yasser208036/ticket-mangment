@@ -4,6 +4,7 @@ import { errorMessage, validationErrors } from '../api/errors'
 import { REOPENED_SLUG, RESOLVED_SLUG } from '../api/statuses'
 import type { TicketDetail } from '../api/tickets'
 import { useTicketsStore } from '../stores/tickets'
+import BaseDialog from './BaseDialog.vue'
 
 const props = defineProps<{ ticket: TicketDetail }>()
 const emit = defineEmits<{ changed: []; close: [] }>()
@@ -59,13 +60,8 @@ async function confirm(): Promise<void> {
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
-    data-testid="ticket-status-dialog"
-  >
-    <div
-      class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150"
-    >
+  <BaseDialog testid="ticket-status-dialog">
+    <div class="space-y-4">
       <h3 class="text-base font-bold text-slate-900">Change status</h3>
 
       <div v-if="ticket.allowed_transitions.length" class="space-y-1.5">
@@ -177,5 +173,5 @@ async function confirm(): Promise<void> {
         </button>
       </div>
     </div>
-  </div>
+  </BaseDialog>
 </template>

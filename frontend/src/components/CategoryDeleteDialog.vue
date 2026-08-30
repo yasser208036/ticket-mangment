@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { errorMessage } from '../api/errors'
 import type { Category, CategoryDeleteBlocked } from '../api/categories'
 import { useCategoriesStore } from '../stores/categories'
+import BaseDialog from './BaseDialog.vue'
 const props = defineProps<{
   category: Category
   blocked: CategoryDeleteBlocked
@@ -22,12 +23,8 @@ async function confirmDelete() {
 }
 </script>
 <template>
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
-  >
-    <div
-      class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150"
-    >
+  <BaseDialog>
+    <div class="space-y-4">
       <!-- Warning Header -->
       <div class="flex items-start gap-3">
         <div
@@ -116,5 +113,5 @@ async function confirmDelete() {
         </button>
       </div>
     </div>
-  </div>
+  </BaseDialog>
 </template>

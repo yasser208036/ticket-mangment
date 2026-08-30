@@ -4,6 +4,7 @@ import { errorMessage, validationErrors } from '../api/errors'
 import type { TicketDetail } from '../api/tickets'
 import { useTicketsStore } from '../stores/tickets'
 import { useUsersStore } from '../stores/users'
+import BaseDialog from './BaseDialog.vue'
 
 const props = defineProps<{ ticket: TicketDetail }>()
 const emit = defineEmits<{ assigned: []; close: [] }>()
@@ -60,13 +61,8 @@ async function submit(assignedTo: number | null): Promise<void> {
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-in fade-in duration-150"
-    data-testid="ticket-assign-dialog"
-  >
-    <div
-      class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150"
-    >
+  <BaseDialog testid="ticket-assign-dialog">
+    <div class="space-y-4">
       <!-- Header -->
       <div class="flex items-start gap-3">
         <div
@@ -172,5 +168,5 @@ async function submit(assignedTo: number | null): Promise<void> {
         </button>
       </div>
     </div>
-  </div>
+  </BaseDialog>
 </template>
