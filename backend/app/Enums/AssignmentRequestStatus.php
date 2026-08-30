@@ -2,11 +2,11 @@
 
 namespace App\Enums;
 
-enum UserRole: string
+enum AssignmentRequestStatus: string
 {
-    case Admin = 'admin';
-    case Agent = 'agent';
-    case User = 'user';
+    case Pending = 'pending';
+    case Approved = 'approved';
+    case Declined = 'declined';
 
     /** @return list<string> */
     public static function values(): array

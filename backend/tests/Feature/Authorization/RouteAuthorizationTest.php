@@ -14,7 +14,7 @@ class RouteAuthorizationTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const ACCESS = ['health' => 'public', 'auth.login' => 'public', 'auth.logout' => 'self', 'auth.me' => 'self', 'auth.password' => 'self', 'admin.users.index' => 'admin', 'admin.users.store' => 'admin', 'admin.users.show' => 'admin', 'admin.users.update' => 'admin', 'admin.users.destroy' => 'admin', 'admin.users.password' => 'admin', 'admin.workload' => 'admin', 'categories.index' => 'staff', 'categories.show' => 'staff', 'priorities.index' => 'staff', 'statuses.index' => 'staff', 'tickets.index' => 'staff', 'tickets.stats' => 'staff', 'tickets.show' => 'staff', 'tickets.status' => 'staff-write', 'tickets.store' => 'staff-write', 'tickets.update' => 'staff-write', 'categories.store' => 'admin-policy', 'categories.update' => 'admin-policy', 'categories.destroy' => 'admin-policy', 'tickets.destroy' => 'admin-policy', 'tickets.assign' => 'admin-policy', 'tickets.claim' => 'agent-policy', 'tickets.escalate' => 'staff', 'tickets.activities' => 'staff', 'tickets.notes' => 'staff'];
+    private const ACCESS = ['health' => 'public', 'auth.login' => 'public', 'auth.logout' => 'self', 'auth.me' => 'self', 'auth.password' => 'self', 'admin.users.index' => 'admin', 'admin.users.store' => 'admin', 'admin.users.show' => 'admin', 'admin.users.update' => 'admin', 'admin.users.destroy' => 'admin', 'admin.users.password' => 'admin', 'admin.workload' => 'admin', 'admin.assignment-requests.index' => 'admin', 'admin.assignment-requests.approve' => 'admin', 'admin.assignment-requests.decline' => 'admin', 'categories.index' => 'staff', 'categories.show' => 'staff', 'priorities.index' => 'staff', 'statuses.index' => 'staff', 'agents.index' => 'staff', 'tickets.index' => 'staff', 'tickets.stats' => 'staff', 'tickets.show' => 'staff', 'tickets.status' => 'staff-write', 'tickets.store' => 'user-policy', 'tickets.update' => 'staff-write', 'categories.store' => 'admin-policy', 'categories.update' => 'admin-policy', 'categories.destroy' => 'admin-policy', 'tickets.destroy' => 'admin-policy', 'tickets.assign' => 'admin-policy', 'tickets.assignment-requests.store' => 'agent-policy', 'tickets.escalate' => 'staff', 'tickets.activities' => 'staff', 'tickets.notes' => 'staff'];
 
     public function test_every_api_route_is_classified(): void
     {
@@ -59,6 +59,18 @@ class RouteAuthorizationTest extends TestCase
         $ticket = Ticket::factory()->create();
         foreach ($this->routesFor('agent-policy', 999999, $ticket->id) as $route) {
             $this->withToken($token)->json($route['method'], $route['uri'])->assertForbidden();
+        }
+    }
+
+    public function test_staff_refused_by_user_policy_routes(): void
+    {
+        $this->seed();
+        foreach (['admin', 'agent'] as $role) {
+            Auth::forgetGuards();
+            $token = $this->tokenFor(User::factory()->{$role}()->create());
+            foreach ($this->routesFor('user-policy') as $route) {
+                $this->withToken($token)->json($route['method'], $route['uri'])->assertForbidden();
+            }
         }
     }
 
@@ -142,6 +154,6 @@ class RouteAuthorizationTest extends TestCase
 
     private function routesFor(string $level, int $categoryId = 999999, int $ticketId = 999999): array
     {
-        return collect(Route::getRoutes())->filter(fn ($route) => (self::ACCESS[$route->getName()] ?? null) === $level)->map(fn ($route) => ['name' => $route->getName(), 'method' => $route->methods()[0], 'uri' => route($route->getName(), ['user' => 999999, 'category' => $categoryId, 'ticket' => $ticketId], absolute: false)])->values()->all();
+        return collect(Route::getRoutes())->filter(fn ($route) => (self::ACCESS[$route->getName()] ?? null) === $level)->map(fn ($route) => ['name' => $route->getName(), 'method' => $route->methods()[0], 'uri' => route($route->getName(), ['user' => 999999, 'category' => $categoryId, 'ticket' => $ticketId, 'assignmentRequest' => 999999], absolute: false)])->values()->all();
     }
 }

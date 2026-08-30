@@ -47,8 +47,12 @@ class DemoSeeder extends Seeder
         $admins = $this->seedAdmins();
         $agents = $this->seedAgents();
         $requesters = $this->seedRequesters();
+        // Keyed by requester_id: an account whose email matches that
+        // requester row, so logging in as it demonstrates author-scoped
+        // ticket visibility (TicketPolicy::view / Ticket::scopeVisibleTo).
+        $endUsersByRequesterId = $this->seedEndUsers($requesters);
 
-        DB::transaction(fn () => $this->seedTickets($admins, $agents, $requesters));
+        DB::transaction(fn () => $this->seedTickets($admins, $agents, $requesters, $endUsersByRequesterId));
     }
 
     /**
@@ -125,11 +129,34 @@ class DemoSeeder extends Seeder
     }
 
     /**
+     * Four of the seeded requesters get a login whose email matches their
+     * requester row exactly -- the same match Requester::firstOrCreate()
+     * uses in TicketController::store(), so these accounts' demo tickets
+     * land on the requester row that already exists.
+     *
+     * @param  Collection<int, Requester>  $requesters
+     * @return array<int, User> keyed by requester_id
+     */
+    private function seedEndUsers(Collection $requesters): array
+    {
+        $chosen = $requesters->take(min(4, $requesters->count()));
+
+        return $chosen->mapWithKeys(fn (Requester $requester) => [
+            $requester->getKey() => User::factory()->endUser()->create([
+                'name' => $requester->name,
+                'email' => $requester->email,
+                'password' => config('seeding.demo.password'),
+            ]),
+        ])->all();
+    }
+
+    /**
      * @param  Collection<int, User>  $admins
      * @param  Collection<int, User>  $agents
      * @param  Collection<int, Requester>  $requesters
+     * @param  array<int, User>  $endUsersByRequesterId
      */
-    private function seedTickets(Collection $admins, Collection $agents, Collection $requesters): void
+    private function seedTickets(Collection $admins, Collection $agents, Collection $requesters, array $endUsersByRequesterId): void
     {
         $statuses = Status::query()->ordered()->get();
         $priorities = Priority::query()->ordered()->get();
@@ -146,7 +173,9 @@ class DemoSeeder extends Seeder
             $priority = $priorities[$i % $priorities->count()];
             $category = $categories[$i % $categories->count()];
             $requester = $requesters[$i % $requesters->count()];
-            $creator = $activeAgents[$i % $activeAgents->count()];
+            // A requester with a matching login authored their own tickets;
+            // everyone else's demo tickets keep the historical agent creator.
+            $creator = $endUsersByRequesterId[$requester->getKey()] ?? $activeAgents[$i % $activeAgents->count()];
 
             $daysAgo = (int) round($span * (1 - $i / max(1, $count - 1)));
             $createdAt = now()->subDays($daysAgo)->subMinutes(fake()->numberBetween(0, 1439));

@@ -35,18 +35,17 @@ class TicketCreatedNotificationTest extends TestCase
         $this->seed([CategorySeeder::class, PrioritySeeder::class, StatusSeeder::class]);
     }
 
-    private function createTicketViaApi(array $overrides = []): TestResponse
+    private function createTicketViaApi(array $overrides = [], ?User $endUser = null): TestResponse
     {
-        $agent = User::factory()->agent()->create();
+        $endUser ??= User::factory()->endUser()->create(['name' => 'Dana Requester', 'email' => 'dana@example.test']);
         $categoryId = Category::query()->value('id');
         $payload = array_replace_recursive([
-            'requester' => ['name' => 'Dana Requester', 'email' => 'dana@example.test'],
             'subject' => 'Printer offline',
             'description' => 'The office printer will not turn on.',
             'category_id' => $categoryId,
         ], $overrides);
 
-        return $this->actingAs($agent)->postJson(route('tickets.store'), $payload);
+        return $this->actingAs($endUser)->postJson(route('tickets.store'), $payload);
     }
 
     private function ticketWithRequester(string $email, string $description): Ticket
@@ -102,9 +101,9 @@ class TicketCreatedNotificationTest extends TestCase
     public function test_the_message_is_addressed_to_the_requester_and_nobody_else(): void
     {
         $agent = User::factory()->agent()->create(['email' => 'agent@example.test']);
+        $endUser = User::factory()->endUser()->create(['name' => 'Dana Requester', 'email' => 'dana@example.test']);
         $categoryId = Category::query()->value('id');
-        $this->actingAs($agent)->postJson(route('tickets.store'), [
-            'requester' => ['name' => 'Dana Requester', 'email' => 'dana@example.test'],
+        $this->actingAs($endUser)->postJson(route('tickets.store'), [
             'subject' => 'Printer offline',
             'description' => 'The office printer will not turn on.',
             'category_id' => $categoryId,
@@ -125,8 +124,9 @@ class TicketCreatedNotificationTest extends TestCase
     {
         Notification::fake();
 
-        $this->createTicketViaApi()->assertCreated();
-        $this->createTicketViaApi()->assertCreated();
+        $endUser = User::factory()->endUser()->create(['name' => 'Dana Requester', 'email' => 'dana@example.test']);
+        $this->createTicketViaApi(endUser: $endUser)->assertCreated();
+        $this->createTicketViaApi(endUser: $endUser)->assertCreated();
 
         $this->assertSame(1, Requester::count());
         Notification::assertSentTimes(TicketCreatedNotification::class, 2);

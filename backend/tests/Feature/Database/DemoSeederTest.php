@@ -229,10 +229,10 @@ class DemoSeederTest extends TestCase
     {
         $this->seed(DemoSeeder::class);
         $admin = User::where('role', 'admin')->first();
+        $endUser = User::factory()->endUser()->create();
         $categoryId = Category::query()->value('id');
 
-        $created = $this->actingAs($admin)->postJson(route('tickets.store'), [
-            'requester' => ['name' => 'Post Seed', 'email' => 'post-seed@example.test'],
+        $created = $this->actingAs($endUser)->postJson(route('tickets.store'), [
             'subject' => 'Post-seed ticket',
             'description' => 'Proves the reference sequence survived seeding.',
             'category_id' => $categoryId,

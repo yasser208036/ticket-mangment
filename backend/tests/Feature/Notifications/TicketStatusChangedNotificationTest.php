@@ -36,16 +36,25 @@ class TicketStatusChangedNotificationTest extends TestCase
         return Status::query()->where('slug', $slug)->firstOrFail()->getKey();
     }
 
+    /**
+     * Assigned to the shared per-test agent: changeStatus() now requires the
+     * acting agent to hold the ticket (Story 56's TicketPolicy rewrite).
+     */
     private function ticketAt(string $slug): Ticket
     {
-        return Ticket::factory()->create(['status_id' => $this->statusId($slug)]);
+        return Ticket::factory()->assignedTo($this->sharedAgent())->create(['status_id' => $this->statusId($slug)]);
+    }
+
+    private ?User $sharedAgentInstance = null;
+
+    private function sharedAgent(): User
+    {
+        return $this->sharedAgentInstance ??= User::factory()->agent()->create();
     }
 
     private function asAgent(): static
     {
-        $agent = User::factory()->agent()->create();
-
-        return $this->actingAs($agent);
+        return $this->actingAs($this->sharedAgent());
     }
 
     private function moveTo(Ticket $ticket, string $slug, ?string $resolution = null, ?string $reason = null)

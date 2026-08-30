@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Policies\TicketPolicy;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,6 +22,25 @@ class Ticket extends Model
     protected function casts(): array
     {
         return ['escalation_level' => 'integer', 'escalated_at' => 'datetime', 'first_responded_at' => 'datetime', 'resolved_at' => 'datetime', 'closed_at' => 'datetime'];
+    }
+
+    /**
+     * Admin: everything. Agent: theirs plus the unassigned queue they may
+     * request from. End user: what they filed.
+     *
+     * @param  Builder<Ticket>  $query
+     * @return Builder<Ticket>
+     */
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->isAdmin()) {
+            return $query;
+        }
+        if ($user->isAgent()) {
+            return $query->where(fn (Builder $scoped) => $scoped->where('assigned_to', $user->getKey())->orWhereNull('assigned_to'));
+        }
+
+        return $query->where('created_by', $user->getKey());
     }
 
     /**
@@ -76,5 +96,10 @@ class Ticket extends Model
     public function activities(): HasMany
     {
         return $this->hasMany(TicketActivity::class);
+    }
+
+    public function assignmentRequests(): HasMany
+    {
+        return $this->hasMany(TicketAssignmentRequest::class);
     }
 }

@@ -14,17 +14,26 @@ class TicketPolicy
 
     public function view(User $user, Ticket $ticket): bool
     {
-        return true;
+        if ($user->isAdmin()) {
+            return true;
+        }
+        if ($user->isAgent()) {
+            return $ticket->assigned_to === $user->getKey() || $ticket->assigned_to === null;
+        }
+
+        return $ticket->created_by === $user->getKey();
     }
 
+    /** Only end users file tickets. Staff work them. */
     public function create(User $user): bool
     {
-        return true;
+        return $user->isEndUser();
     }
 
+    /** Editing the ticket's own fields is staff work, and an agent's own queue only. */
     public function update(User $user, Ticket $ticket): bool
     {
-        return true;
+        return $user->isAdmin() || ($user->isAgent() && $ticket->assigned_to === $user->getKey());
     }
 
     public function delete(User $user, Ticket $ticket): bool
@@ -37,14 +46,15 @@ class TicketPolicy
         return $user->isAdmin();
     }
 
-    public function claim(User $user, Ticket $ticket): bool
+    /** An agent may ask for a ticket. Whether it is still unassigned is a 422, checked in the form request. */
+    public function requestAssignment(User $user, Ticket $ticket): bool
     {
-        return ! $user->isAdmin();
+        return $user->isAgent();
     }
 
     public function changeStatus(User $user, Ticket $ticket): bool
     {
-        return true;
+        return $this->update($user, $ticket);
     }
 
     public function escalate(User $user, Ticket $ticket): bool
@@ -54,17 +64,18 @@ class TicketPolicy
         // must return 422 and a denied policy can only ever be a 403.
         // TicketResource's `can.escalate` keeps the state half so the button
         // still hides.
-        return true;
+        return $user->isAdmin() || ($user->isAgent() && $ticket->assigned_to === $user->getKey());
     }
 
     /**
-     * Any active staff member may note any ticket, including a terminal one --
-     * a post-mortem note on a Closed ticket is the point of the feature. This
-     * deliberately does NOT mirror escalate()'s is_terminal guard: escalating a
-     * closed ticket is incoherent, recording a fact about one is not.
+     * Any active staff member may note any ticket they can see, including a
+     * terminal one -- a post-mortem note on a Closed ticket is the point of
+     * the feature. This deliberately does NOT mirror escalate()'s is_terminal
+     * guard: escalating a closed ticket is incoherent, recording a fact about
+     * one is not. An end user never notes -- the trail stays internal.
      */
     public function addNote(User $user, Ticket $ticket): bool
     {
-        return true;
+        return ! $user->isEndUser() && $this->view($user, $ticket);
     }
 }

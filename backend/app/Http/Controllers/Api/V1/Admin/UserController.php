@@ -77,7 +77,7 @@ class UserController extends Controller
     {
         $this->authorize('update', $user);
         $deactivating = $request->has('is_active') && ! $request->boolean('is_active');
-        $demoting = $request->enum('role', UserRole::class) === UserRole::Agent && $user->isAdmin();
+        $demoting = $request->has('role') && $request->enum('role', UserRole::class) !== UserRole::Admin && $user->isAdmin();
         DB::transaction(function () use ($request, $user, $deactivating, $demoting): void {
             if ($deactivating || $demoting) {
                 $this->guardAgainstLockout($request, $user, $deactivating);

@@ -44,6 +44,17 @@ class User extends Authenticatable
         return $this->role === UserRole::Admin;
     }
 
+    public function isAgent(): bool
+    {
+        return $this->role === UserRole::Agent;
+    }
+
+    /** A requester with a login. Never staff: creates tickets, sees only their own. */
+    public function isEndUser(): bool
+    {
+        return $this->role === UserRole::User;
+    }
+
     /** @param Builder<User> $query */
     public function scopeActive(Builder $query): Builder
     {

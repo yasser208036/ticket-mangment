@@ -24,7 +24,7 @@ class UsersTableSchemaTest extends TestCase
 
     public function test_role_is_mysql_enum(): void
     {
-        $this->assertSame("enum('admin','agent')", Schema::getColumnType('users', 'role', true));
+        $this->assertSame("enum('admin','agent','user')", Schema::getColumnType('users', 'role', true));
     }
 
     public function test_role_defaults_to_agent(): void

@@ -21,9 +21,9 @@ class RawSqlAllowlistTest extends TestCase
         'app/Services/AgentWorkload.php:33',
         'app/Services/TicketSearch.php:44',
         'app/Services/TicketSearch.php:46',
+        'app/Services/TicketStats.php:18',
         'app/Services/TicketStats.php:19',
         'app/Services/TicketStats.php:20',
-        'app/Services/TicketStats.php:21',
     ];
 
     public function test_every_raw_sql_call_site_is_reviewed_and_allowlisted(): void

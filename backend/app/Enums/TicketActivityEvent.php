@@ -16,6 +16,8 @@ enum TicketActivityEvent: string
     case Reopened = 'reopened';
     case Escalated = 'escalated';
     case Stale = 'stale';
+    case AssignmentRequested = 'assignment_requested';
+    case AssignmentRequestDeclined = 'assignment_request_declined';
 
     public static function values(): array
     {

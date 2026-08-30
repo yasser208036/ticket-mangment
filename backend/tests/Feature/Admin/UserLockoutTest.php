@@ -63,6 +63,16 @@ class UserLockoutTest extends TestCase
         $this->assertSame(UserRole::Admin, $target->refresh()->role);
     }
 
+    public function test_the_last_active_admin_cannot_be_moved_to_role_user(): void
+    {
+        $target = User::factory()->admin()->create();
+        $this->actAsAdminWhoseRowWentInactive();
+        $this->patchJson($this->url($target), ['role' => 'user'])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.role.0', 'This is the last active administrator. Promote someone else first.');
+        $this->assertSame(UserRole::Admin, $target->refresh()->role);
+    }
+
     public function test_a_second_admin_can_be_deactivated_when_a_third_remains(): void
     {
         $this->actingAsAdmin();

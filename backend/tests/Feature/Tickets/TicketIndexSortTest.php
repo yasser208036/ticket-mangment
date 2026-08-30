@@ -81,6 +81,29 @@ class TicketIndexSortTest extends TestCase
         $this->asAgent()->getJson('/api/v1/tickets?escalated=0')->assertOk()->assertJsonCount(1, 'data');
     }
 
+    /**
+     * The SPA (DashboardView's escalated card, TicketFilterBar's escalation
+     * select) sends the JS-boolean spelling, not '1'/'0'. Laravel's `boolean`
+     * rule rejects the literal strings 'true'/'false' by default, so this
+     * filter 422'd from the UI even though the '1'/'0' test above always
+     * passed.
+     */
+    public function test_the_escalated_filter_accepts_the_javascript_boolean_spelling(): void
+    {
+        Ticket::factory()->create(['escalation_level' => 1]);
+        Ticket::factory()->create(['escalation_level' => 0]);
+
+        $this->asAgent()->getJson('/api/v1/tickets?escalated=true')->assertOk()->assertJsonCount(1, 'data');
+        $this->asAgent()->getJson('/api/v1/tickets?escalated=false')->assertOk()->assertJsonCount(1, 'data');
+    }
+
+    public function test_an_invalid_escalated_value_is_still_rejected(): void
+    {
+        $this->asAgent()->getJson('/api/v1/tickets?escalated=maybe')
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.escalated.0', 'The escalated field must be true or false.');
+    }
+
     private function asAgent(): static
     {
         return $this->withToken(User::factory()->agent()->create()->createToken('test')->plainTextToken);

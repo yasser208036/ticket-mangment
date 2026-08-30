@@ -30,10 +30,24 @@ class TicketEscalateTest extends TestCase
         $this->postJson($this->url($ticket), ['reason' => 'A perfectly good reason.'])->assertUnauthorized();
     }
 
-    public function test_escalating_without_a_reason_is_rejected(): void
+    public function test_an_agent_not_holding_the_ticket_is_forbidden(): void
     {
         $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), [])
+        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Not mine to escalate.'])->assertForbidden();
+    }
+
+    public function test_an_agent_holding_the_ticket_may_escalate(): void
+    {
+        $agent = User::factory()->agent()->create();
+        $ticket = Ticket::factory()->assignedTo($agent)->create();
+
+        $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), ['reason' => 'Mine to escalate.'])->assertOk();
+    }
+
+    public function test_escalating_without_a_reason_is_rejected(): void
+    {
+        [$agent, $ticket] = $this->agentAndTicket();
+        $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), [])
             ->assertUnprocessable()
             ->assertJsonPath('errors.reason.0', 'Say why this ticket needs to be escalated.');
         $this->assertSame(0, $ticket->fresh()->escalation_level);
@@ -42,19 +56,20 @@ class TicketEscalateTest extends TestCase
 
     public function test_a_whitespace_only_reason_is_rejected_as_required(): void
     {
-        $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => '   '])
+        [$agent, $ticket] = $this->agentAndTicket();
+        $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), ['reason' => '   '])
             ->assertUnprocessable()
             ->assertJsonPath('errors.reason.0', 'Say why this ticket needs to be escalated.');
     }
 
     public function test_a_short_reason_is_rejected(): void
     {
-        $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'too short'])
+        [$agent, $ticket] = $this->agentAndTicket();
+        $token = $this->tokenFor($agent);
+        $this->withToken($token)->postJson($this->url($ticket), ['reason' => 'too short'])
             ->assertUnprocessable()
             ->assertJsonPath('errors.reason.0', 'The escalation reason must be at least 10 characters.');
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => str_repeat('a', 5001)])
+        $this->withToken($token)->postJson($this->url($ticket), ['reason' => str_repeat('a', 5001)])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('reason');
     }
@@ -62,9 +77,11 @@ class TicketEscalateTest extends TestCase
     public function test_a_terminal_ticket_returns_422_not_403(): void
     {
         foreach (['resolved', 'closed'] as $slug) {
+            Auth::forgetGuards();
             $status = Status::query()->where('slug', $slug)->firstOrFail();
-            $ticket = Ticket::factory()->create(['status_id' => $status->id]);
-            $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Needs escalation please.'])
+            $agent = User::factory()->agent()->create();
+            $ticket = Ticket::factory()->assignedTo($agent)->create(['status_id' => $status->id]);
+            $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), ['reason' => 'Needs escalation please.'])
                 ->assertStatus(422)
                 ->assertJsonPath('errors.status.0', "A {$status->name} ticket cannot be escalated.");
         }
@@ -72,21 +89,23 @@ class TicketEscalateTest extends TestCase
 
     public function test_can_escalate_is_false_on_a_terminal_ticket(): void
     {
+        $agent = User::factory()->agent()->create();
         $resolved = Status::query()->where('slug', 'resolved')->firstOrFail();
-        $terminalTicket = Ticket::factory()->create(['status_id' => $resolved->id]);
-        $openTicket = Ticket::factory()->create();
+        $terminalTicket = Ticket::factory()->assignedTo($agent)->create(['status_id' => $resolved->id]);
+        $openTicket = Ticket::factory()->assignedTo($agent)->create();
 
-        $this->asAgent()->getJson("/api/v1/tickets/{$terminalTicket->id}")->assertJsonPath('data.can.escalate', false);
-        Auth::forgetGuards();
-        $this->asAgent()->getJson("/api/v1/tickets/{$openTicket->id}")->assertJsonPath('data.can.escalate', true);
+        $token = $this->tokenFor($agent);
+        $this->withToken($token)->getJson("/api/v1/tickets/{$terminalTicket->id}")->assertJsonPath('data.can.escalate', false);
+        $this->withToken($token)->getJson("/api/v1/tickets/{$openTicket->id}")->assertJsonPath('data.can.escalate', true);
     }
 
     public function test_priority_id_and_assigned_to_are_prohibited(): void
     {
-        $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Valid enough reason here.', 'priority_id' => 4])
+        [$agent, $ticket] = $this->agentAndTicket();
+        $token = $this->tokenFor($agent);
+        $this->withToken($token)->postJson($this->url($ticket), ['reason' => 'Valid enough reason here.', 'priority_id' => 4])
             ->assertUnprocessable()->assertJsonValidationErrors('priority_id');
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Valid enough reason here.', 'assigned_to' => 1])
+        $this->withToken($token)->postJson($this->url($ticket), ['reason' => 'Valid enough reason here.', 'assigned_to' => 1])
             ->assertUnprocessable()->assertJsonValidationErrors('assigned_to');
     }
 
@@ -96,25 +115,26 @@ class TicketEscalateTest extends TestCase
         $medium = Priority::query()->where('slug', 'medium')->firstOrFail();
         $high = Priority::query()->where('slug', 'high')->firstOrFail();
 
-        $lowTicket = Ticket::factory()->create(['priority_id' => $low->id]);
-        $mediumTicket = Ticket::factory()->create(['priority_id' => $medium->id]);
-        $highTicket = Ticket::factory()->create(['priority_id' => $high->id]);
+        $agent = User::factory()->agent()->create();
+        $lowTicket = Ticket::factory()->assignedTo($agent)->create(['priority_id' => $low->id]);
+        $mediumTicket = Ticket::factory()->assignedTo($agent)->create(['priority_id' => $medium->id]);
+        $highTicket = Ticket::factory()->assignedTo($agent)->create(['priority_id' => $high->id]);
 
-        $this->asAgent()->postJson($this->url($lowTicket), ['reason' => 'Escalating this low one.'])
+        $token = $this->tokenFor($agent);
+        $this->withToken($token)->postJson($this->url($lowTicket), ['reason' => 'Escalating this low one.'])
             ->assertOk()->assertJsonPath('data.priority.slug', 'medium');
-        Auth::forgetGuards();
-        $this->asAgent()->postJson($this->url($mediumTicket), ['reason' => 'Escalating this medium one.'])
+        $this->withToken($token)->postJson($this->url($mediumTicket), ['reason' => 'Escalating this medium one.'])
             ->assertOk()->assertJsonPath('data.priority.slug', 'high');
-        Auth::forgetGuards();
-        $this->asAgent()->postJson($this->url($highTicket), ['reason' => 'Escalating this high one.'])
+        $this->withToken($token)->postJson($this->url($highTicket), ['reason' => 'Escalating this high one.'])
             ->assertOk()->assertJsonPath('data.priority.slug', 'urgent');
     }
 
     public function test_urgent_does_not_overflow(): void
     {
         $urgent = Priority::query()->where('slug', 'urgent')->firstOrFail();
-        $ticket = Ticket::factory()->create(['priority_id' => $urgent->id]);
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Already urgent but still stuck.'])
+        $agent = User::factory()->agent()->create();
+        $ticket = Ticket::factory()->assignedTo($agent)->create(['priority_id' => $urgent->id]);
+        $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), ['reason' => 'Already urgent but still stuck.'])
             ->assertOk()->assertJsonPath('data.priority.slug', 'urgent');
         $row = TicketActivity::query()->where('ticket_id', $ticket->id)->where('event', TicketActivityEvent::Escalated->value)->firstOrFail();
         $this->assertSame('Urgent', $row->meta['from_priority']);
@@ -125,9 +145,12 @@ class TicketEscalateTest extends TestCase
     {
         $holder = User::factory()->admin()->create();
         $ticket = Ticket::factory()->assignedTo($holder)->create();
-        $agent = User::factory()->agent()->create();
+        // A different admin escalates -- an agent could not, since they do not
+        // hold the ticket, and the admin bypass proves the holder is kept
+        // regardless of who triggers the escalation.
+        $otherAdmin = User::factory()->admin()->create();
 
-        $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), ['reason' => 'Someone else should look at this.'])
+        $this->withToken($this->tokenFor($otherAdmin))->postJson($this->url($ticket), ['reason' => 'Someone else should look at this.'])
             ->assertOk()->assertJsonPath('data.assignee.id', $holder->id);
         $this->assertSame(0, TicketActivity::query()->where('ticket_id', $ticket->id)->where('event', TicketActivityEvent::Assigned->value)->count());
     }
@@ -144,8 +167,8 @@ class TicketEscalateTest extends TestCase
     public function test_escalation_is_refused_when_no_active_admin_exists(): void
     {
         User::query()->where('role', 'admin')->update(['is_active' => false]);
-        $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Nobody is around to take this.'])
+        [$agent, $ticket] = $this->agentAndTicket();
+        $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), ['reason' => 'Nobody is around to take this.'])
             ->assertStatus(422)
             ->assertJsonPath('errors.assigned_to.0', 'There is no active administrator to escalate to. Activate an admin account first.');
         $this->assertSame(0, $ticket->fresh()->escalation_level);
@@ -161,7 +184,7 @@ class TicketEscalateTest extends TestCase
         $liveAdmin = User::factory()->admin()->create();
         $ticket = Ticket::factory()->assignedTo($inactiveAdmin)->create();
 
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Their old admin left the team.'])
+        $this->withToken($this->tokenFor($liveAdmin))->postJson($this->url($ticket), ['reason' => 'Their old admin left the team.'])
             ->assertOk()->assertJsonPath('data.assignee.id', $liveAdmin->id);
     }
 
@@ -182,17 +205,22 @@ class TicketEscalateTest extends TestCase
         $trashed = Ticket::factory()->assignedTo($tiedAlsoLow)->create(['status_id' => $openStatus->id]);
         $trashed->delete();
 
-        $ticket = Ticket::factory()->create();
+        // The escalating agent must hold the ticket to be allowed to escalate
+        // it, but must NOT be an admin -- an admin actor would itself enter
+        // the "least loaded" candidate pool with zero tickets and win by
+        // mistake, which is not what this test is about.
+        $escalatingAgent = User::factory()->agent()->create();
+        $ticket = Ticket::factory()->assignedTo($escalatingAgent)->create();
         $winner = $tiedLow->id < $tiedAlsoLow->id ? $tiedLow : $tiedAlsoLow;
 
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Routed to the least busy admin.'])
+        $this->withToken($this->tokenFor($escalatingAgent))->postJson($this->url($ticket), ['reason' => 'Routed to the least busy admin.'])
             ->assertOk()->assertJsonPath('data.assignee.id', $winner->id);
     }
 
     public function test_the_escalated_row_captures_the_reason_and_the_level(): void
     {
         $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Capturing this reason exactly.'])->assertOk();
+        $this->asAdmin()->postJson($this->url($ticket), ['reason' => 'Capturing this reason exactly.'])->assertOk();
 
         $row = TicketActivity::query()->where('ticket_id', $ticket->id)->where('event', TicketActivityEvent::Escalated->value)->firstOrFail();
         $this->assertSame('escalation_level', $row->field);
@@ -207,7 +235,7 @@ class TicketEscalateTest extends TestCase
     {
         $agentHolder = User::factory()->agent()->create();
         $ticket = Ticket::factory()->assignedTo($agentHolder)->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Escalating past the current agent.'])->assertOk();
+        $this->withToken($this->tokenFor($agentHolder))->postJson($this->url($ticket), ['reason' => 'Escalating past the current agent.'])->assertOk();
 
         $row = TicketActivity::query()->where('ticket_id', $ticket->id)->where('event', TicketActivityEvent::Assigned->value)->firstOrFail();
         $this->assertSame('assigned_to', $row->field);
@@ -215,8 +243,9 @@ class TicketEscalateTest extends TestCase
         $this->assertNotNull($row->new_value);
         $this->assertSame($agentHolder->name, $row->meta['from_name']);
 
+        Auth::forgetGuards();
         $unassigned = Ticket::factory()->create(['assigned_to' => null]);
-        $this->asAgent()->postJson($this->url($unassigned), ['reason' => 'Escalating an unassigned ticket.'])->assertOk();
+        $this->asAdmin()->postJson($this->url($unassigned), ['reason' => 'Escalating an unassigned ticket.'])->assertOk();
         $unassignedRow = TicketActivity::query()->where('ticket_id', $unassigned->id)->where('event', TicketActivityEvent::Assigned->value)->firstOrFail();
         $this->assertNull($unassignedRow->old_value);
     }
@@ -224,9 +253,9 @@ class TicketEscalateTest extends TestCase
     public function test_a_second_escalation_increments_and_overwrites(): void
     {
         $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'First reason for escalation.'])->assertOk();
-        Auth::forgetGuards();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Second and newer reason.'])
+        $token = $this->tokenFor(User::factory()->admin()->create());
+        $this->withToken($token)->postJson($this->url($ticket), ['reason' => 'First reason for escalation.'])->assertOk();
+        $this->withToken($token)->postJson($this->url($ticket), ['reason' => 'Second and newer reason.'])
             ->assertOk()->assertJsonPath('data.escalation_level', 2);
 
         $ticket->refresh();
@@ -247,7 +276,7 @@ class TicketEscalateTest extends TestCase
         });
 
         $before = $ticket->fresh()->only(['escalation_level', 'priority_id', 'assigned_to', 'escalated_at']);
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'This will blow up mid-way.'])->assertServerError();
+        $this->asAdmin()->postJson($this->url($ticket), ['reason' => 'This will blow up mid-way.'])->assertServerError();
 
         $this->assertSame($before, $ticket->fresh()->only(['escalation_level', 'priority_id', 'assigned_to', 'escalated_at']));
     }
@@ -256,7 +285,7 @@ class TicketEscalateTest extends TestCase
     {
         $reason = '<script>alert(1)</script> مرحبا بك';
         $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => $reason])->assertOk();
+        $this->asAdmin()->postJson($this->url($ticket), ['reason' => $reason])->assertOk();
 
         $this->assertSame($reason, $ticket->fresh()->escalation_reason);
         $row = TicketActivity::query()->where('ticket_id', $ticket->id)->where('event', TicketActivityEvent::Escalated->value)->firstOrFail();
@@ -267,18 +296,18 @@ class TicketEscalateTest extends TestCase
     {
         $ticket = Ticket::factory()->create();
         $before = $ticket->only(['status_id', 'resolved_at', 'closed_at', 'first_responded_at']);
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Never touches the workflow.'])->assertOk();
+        $this->asAdmin()->postJson($this->url($ticket), ['reason' => 'Never touches the workflow.'])->assertOk();
         $this->assertSame($before, $ticket->fresh()->only(['status_id', 'resolved_at', 'closed_at', 'first_responded_at']));
     }
 
     public function test_the_response_omits_can(): void
     {
         $ticket = Ticket::factory()->create();
-        $this->asAgent()->postJson($this->url($ticket), ['reason' => 'Checking the response shape.'])
+        $this->asAdmin()->postJson($this->url($ticket), ['reason' => 'Checking the response shape.'])
             ->assertOk()
             ->assertJsonMissingPath('data.can')
             ->assertJsonPath('data.escalation_level', 1);
-        $this->assertArrayHasKey('priority', $this->asAgent()->postJson($this->url(Ticket::factory()->create()), ['reason' => 'Second ticket for shape check.'])->json('data'));
+        $this->assertArrayHasKey('priority', $this->asAdmin()->postJson($this->url(Ticket::factory()->create()), ['reason' => 'Second ticket for shape check.'])->json('data'));
     }
 
     public function test_a_nonexistent_and_a_soft_deleted_ticket_are_404(): void
@@ -286,11 +315,16 @@ class TicketEscalateTest extends TestCase
         $trashed = Ticket::factory()->create();
         $trashed->delete();
 
-        $this->asAgent()->postJson($this->url(999999), ['reason' => 'Does not matter here.'])->assertNotFound();
-        Auth::forgetGuards();
-        $this->asAgent()->postJson($this->url($trashed), ['reason' => 'Does not matter here.'])->assertNotFound();
-        Auth::forgetGuards();
         $this->asAdmin()->postJson($this->url(999999), ['reason' => 'Does not matter here.'])->assertNotFound();
+        $this->asAdmin()->postJson($this->url($trashed), ['reason' => 'Does not matter here.'])->assertNotFound();
+    }
+
+    /** @return array{User, Ticket} */
+    private function agentAndTicket(): array
+    {
+        $agent = User::factory()->agent()->create();
+
+        return [$agent, Ticket::factory()->assignedTo($agent)->create()];
     }
 
     private function url(Ticket|int $ticket): string

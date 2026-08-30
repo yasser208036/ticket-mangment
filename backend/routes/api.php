@@ -1,8 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Admin\AssignmentRequestController as AdminAssignmentRequestController;
 use App\Http\Controllers\Api\V1\Admin\UserController;
 use App\Http\Controllers\Api\V1\Admin\UserPasswordController;
 use App\Http\Controllers\Api\V1\Admin\WorkloadController;
+use App\Http\Controllers\Api\V1\AgentController;
+use App\Http\Controllers\Api\V1\AssignmentRequestController;
 use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
@@ -45,6 +48,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function (): void {
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->middleware('throttle:write')->name('categories.destroy');
     Route::get('/priorities', PriorityController::class)->name('priorities.index');
     Route::get('/statuses', StatusController::class)->name('statuses.index');
+    Route::get('/agents', AgentController::class)->name('agents.index');
     Route::get('/tickets', [TicketController::class, 'index'])->name('tickets.index');
     Route::get('/tickets/stats', [TicketController::class, 'stats'])->name('tickets.stats');
     Route::post('/tickets', [TicketController::class, 'store'])->middleware('throttle:write')->name('tickets.store');
@@ -52,7 +56,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function (): void {
     Route::get('/tickets/{ticket}/activities', TicketActivityController::class)->name('tickets.activities');
     Route::post('/tickets/{ticket}/notes', TicketNoteController::class)->middleware('throttle:write')->name('tickets.notes');
     Route::post('/tickets/{ticket}/assign', [TicketController::class, 'assign'])->middleware('throttle:write')->name('tickets.assign');
-    Route::post('/tickets/{ticket}/claim', [TicketController::class, 'claim'])->middleware('throttle:write')->name('tickets.claim');
+    Route::post('/tickets/{ticket}/assignment-requests', [AssignmentRequestController::class, 'store'])->middleware('throttle:write')->name('tickets.assignment-requests.store');
     Route::post('/tickets/{ticket}/escalate', [TicketController::class, 'escalate'])->middleware('throttle:write')->name('tickets.escalate');
     Route::post('/tickets/{ticket}/status', [TicketController::class, 'changeStatus'])->middleware('throttle:write')->name('tickets.status');
     Route::patch('/tickets/{ticket}', [TicketController::class, 'update'])->middleware('throttle:write')->name('tickets.update');
@@ -67,5 +71,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function (): void {
         // 6/min keyed by the acting admin, the same one /auth/password uses.
         Route::patch('/users/{user}/password', UserPasswordController::class)->middleware('throttle:password')->name('users.password');
         Route::get('/workload', WorkloadController::class)->name('workload');
+        Route::get('/assignment-requests', [AdminAssignmentRequestController::class, 'index'])->name('assignment-requests.index');
+        Route::post('/assignment-requests/{assignmentRequest}/approve', [AdminAssignmentRequestController::class, 'approve'])->middleware('throttle:write')->name('assignment-requests.approve');
+        Route::post('/assignment-requests/{assignmentRequest}/decline', [AdminAssignmentRequestController::class, 'decline'])->middleware('throttle:write')->name('assignment-requests.decline');
     });
 });

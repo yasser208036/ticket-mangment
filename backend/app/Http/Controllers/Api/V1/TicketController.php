@@ -17,12 +17,14 @@ use App\Http\Requests\Api\V1\IndexTicketRequest;
 use App\Http\Requests\Api\V1\StoreTicketRequest;
 use App\Http\Requests\Api\V1\UpdateTicketRequest;
 use App\Http\Resources\V1\TicketResource;
+use App\Models\Category;
 use App\Models\Priority;
 use App\Models\Requester;
 use App\Models\Status;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\ActivityRecorder;
+use App\Services\TicketAssignment;
 use App\Services\TicketReferenceGenerator;
 use App\Services\TicketSearch;
 use App\Services\TicketStats;
@@ -33,7 +35,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LogicException;
@@ -55,6 +56,7 @@ class TicketController extends Controller
         $direction = $request->string('direction', 'desc')->value();
         $assignee = $request->assigneeFilter();
         $tickets = Ticket::query()
+            ->visibleTo($request->user())
             ->with(['requester', 'category', 'priority', 'status', 'assignee', 'creator'])
             ->when($request->has('status_id'), fn ($query) => $query->whereIn('status_id', $request->input('status_id')))
             ->when($request->has('priority_id'), fn ($query) => $query->whereIn('priority_id', $request->input('priority_id')))
@@ -229,81 +231,16 @@ class TicketController extends Controller
         return Priority::query()->where('level', '>', $current->level)->orderBy('level')->first() ?? $current;
     }
 
-    public function assign(AssignTicketRequest $request, Ticket $ticket, ActivityRecorder $recorder): JsonResponse
+    public function assign(AssignTicketRequest $request, Ticket $ticket, ActivityRecorder $recorder, TicketAssignment $assignment): JsonResponse
     {
         $actorId = $request->user()->getKey();
         $change = new AssignmentChange($actorId, $request->input('assigned_to') === null ? null : (int) $request->input('assigned_to'), $request->input('reason'));
-        $changed = DB::transaction(fn (): bool => $this->changeAssignee($ticket, $recorder, $change));
+        $changed = DB::transaction(fn (): bool => $assignment->changeAssignee($ticket, $recorder, $change));
         if ($changed && $change->targetId !== null) {
             TicketAssigned::dispatch($ticket->getKey(), $change->targetId, $actorId, $change->reason);
         }
 
         return TicketResource::make($ticket->fresh()->load(['requester', 'category', 'priority', 'status', 'assignee', 'creator', 'escalatedBy']))->response();
-    }
-
-    private function changeAssignee(Ticket $ticket, ActivityRecorder $recorder, AssignmentChange $change): bool
-    {
-        Ticket::query()->whereKey($ticket->getKey())->lockForUpdate()->firstOrFail();
-        $ticket->refresh();
-        $previousId = $ticket->assigned_to;
-        $ticket->assigned_to = $change->targetId;
-        if ($ticket->getDirty() === []) {
-            return false;
-        }
-        $ticket->save();
-        $this->recordAssignment($ticket, $recorder, $previousId, $change);
-
-        return true;
-    }
-
-    private function recordAssignment(Ticket $ticket, ActivityRecorder $recorder, ?int $previousId, AssignmentChange $change): void
-    {
-        $recorder->record($ticket->getKey(), $change->targetId === null ? TicketActivityEvent::Unassigned : TicketActivityEvent::Assigned, [
-            'user_id' => $change->actorId, 'field' => 'assigned_to',
-            'old_value' => $previousId === null ? null : (string) $previousId,
-            'new_value' => $change->targetId === null ? null : (string) $change->targetId,
-            'meta' => [...($change->reason === null ? [] : ['reason' => $change->reason]), 'from_name' => $this->userName($previousId), 'to_name' => $this->userName($change->targetId)],
-        ]);
-    }
-
-    private function userName(?int $userId): ?string
-    {
-        return $userId === null ? null : User::query()->whereKey($userId)->value('name');
-    }
-
-    public function claim(Request $request, Ticket $ticket, ActivityRecorder $recorder): JsonResponse
-    {
-        $this->authorize('claim', $ticket);
-        $claimant = $request->user();
-        $holderId = DB::transaction(fn (): int|false|null => $this->claimTicket($ticket, $claimant, $recorder));
-        if ($holderId !== null) {
-            return $this->claimConflict($holderId);
-        }
-
-        return TicketResource::make($ticket->fresh()->load(['requester', 'category', 'priority', 'status', 'assignee', 'creator', 'escalatedBy']))->response();
-    }
-
-    private function claimTicket(Ticket $ticket, User $claimant, ActivityRecorder $recorder): int|false|null
-    {
-        $won = Ticket::query()->whereKey($ticket->getKey())->whereNull('assigned_to')->update(['assigned_to' => $claimant->getKey()]);
-        if ($won === 0) {
-            $holderId = Ticket::query()->whereKey($ticket->getKey())->value('assigned_to');
-
-            return $holderId === null ? false : ((int) $holderId === $claimant->getKey() ? null : (int) $holderId);
-        }
-        $recorder->record($ticket->getKey(), TicketActivityEvent::Claimed, ['user_id' => $claimant->getKey(), 'field' => 'assigned_to', 'old_value' => null, 'new_value' => (string) $claimant->getKey(), 'meta' => ['to_name' => $claimant->name]]);
-
-        return null;
-    }
-
-    private function claimConflict(int|false $holderId): JsonResponse
-    {
-        $holder = $holderId === false ? null : User::query()->find($holderId, ['id', 'name']);
-        if ($holder === null) {
-            return response()->json(['message' => 'This ticket\'s assignment changed while you were claiming it. Reload and try again.'], 409);
-        }
-
-        return response()->json(['message' => "{$holder->name} already claimed this ticket.", 'assignee' => ['id' => $holder->id, 'name' => $holder->name]], 409);
     }
 
     public function update(UpdateTicketRequest $request, Ticket $ticket, ActivityRecorder $recorder): JsonResponse
@@ -318,7 +255,21 @@ class TicketController extends Controller
             $originals = array_map(fn (string $field) => $ticket->getOriginal($field), array_combine(array_keys($changes), array_keys($changes)));
             $ticket->save();
             foreach ($changes as $field => $newValue) {
-                $recorder->record($ticket->getKey(), TicketActivityEvent::Updated, ['user_id' => $actorId, 'field' => $field, 'old_value' => $originals[$field] === null ? null : (string) $originals[$field], 'new_value' => $newValue === null ? null : (string) $newValue, 'meta' => ['reason' => 'edited']]);
+                // category_id and priority_id are foreign keys, so old_value
+                // and new_value are stringified ids -- meaningless to a
+                // reader. meta.from_name/to_name is the convention every
+                // other assignment/category writer already uses (see
+                // TicketActivityResource), so the timeline resolves the same
+                // way regardless of which action produced the row.
+                $meta = ['reason' => 'edited'];
+                if ($field === 'category_id') {
+                    $meta['from_name'] = $originals[$field] === null ? null : Category::query()->find($originals[$field])?->name;
+                    $meta['to_name'] = Category::query()->find($newValue)?->name;
+                } elseif ($field === 'priority_id') {
+                    $meta['from_name'] = $originals[$field] === null ? null : Priority::query()->find($originals[$field])?->name;
+                    $meta['to_name'] = Priority::query()->find($newValue)?->name;
+                }
+                $recorder->record($ticket->getKey(), TicketActivityEvent::Updated, ['user_id' => $actorId, 'field' => $field, 'old_value' => $originals[$field] === null ? null : (string) $originals[$field], 'new_value' => $newValue === null ? null : (string) $newValue, 'meta' => $meta]);
             }
         });
 
@@ -337,21 +288,40 @@ class TicketController extends Controller
         return response()->noContent();
     }
 
+    private function userName(?int $userId): ?string
+    {
+        return $userId === null ? null : User::query()->whereKey($userId)->value('name');
+    }
+
     public function store(StoreTicketRequest $request, TicketReferenceGenerator $references, ActivityRecorder $recorder): JsonResponse
     {
         $this->authorize('create', Ticket::class);
-        $actorId = $request->user()->getKey();
-        $ticket = DB::transaction(function () use ($request, $references, $recorder, $actorId): Ticket {
-            $requesterInput = $request->validated('requester');
-            $requester = Requester::firstOrCreate(['email' => $requesterInput['email']], Arr::only($requesterInput, ['name', 'phone', 'company']));
-            $ticket = new Ticket($request->safe()->only(['subject', 'description', 'category_id']));
+        $actor = $request->user();
+        $actorId = $actor->getKey();
+        $ticket = DB::transaction(function () use ($request, $references, $recorder, $actor, $actorId): Ticket {
+            // The account IS the requester. Matched on email so a contact who
+            // later gets a login inherits their own ticket history -- see the
+            // plan's "still matched to a Requester row" decision.
+            $requester = Requester::firstOrCreate(
+                ['email' => mb_strtolower($actor->email)],
+                ['name' => $actor->name],
+            );
+            $ticket = new Ticket($request->safe()->only(['subject', 'description', 'category_id', 'assigned_to']));
             $ticket->requester_id = $requester->getKey();
             $ticket->priority_id = $request->has('priority_id') ? $request->integer('priority_id') : $this->defaultKey(Priority::query(), 'priority');
-            $ticket->status_id = $request->has('status_id') ? $request->integer('status_id') : $this->defaultKey(Status::query(), 'status');
+            $ticket->status_id = $this->defaultKey(Status::query(), 'status');
             $ticket->created_by = $actorId;
             $ticket->reference = $references->next();
             $ticket->save();
             $recorder->record($ticket->getKey(), TicketActivityEvent::Created, ['user_id' => $actorId, 'meta' => ['reference' => $ticket->reference]]);
+
+            if ($ticket->assigned_to !== null) {
+                $recorder->record($ticket->getKey(), TicketActivityEvent::Assigned, [
+                    'user_id' => $actorId, 'field' => 'assigned_to',
+                    'old_value' => null, 'new_value' => (string) $ticket->assigned_to,
+                    'meta' => ['reason' => 'chosen_at_creation', 'to_name' => $this->userName($ticket->assigned_to)],
+                ]);
+            }
 
             return $ticket;
         });
@@ -362,6 +332,9 @@ class TicketController extends Controller
         // than no confirmation. A failed POST dispatches nothing because the
         // exception propagates before this line.
         TicketCreated::dispatch($ticket->getKey());
+        if ($ticket->assigned_to !== null) {
+            TicketAssigned::dispatch($ticket->getKey(), $ticket->assigned_to, $actorId, null);
+        }
 
         return TicketResource::make($ticket->load(['requester', 'category', 'priority', 'status', 'assignee', 'creator']))->response()->setStatusCode(201);
     }

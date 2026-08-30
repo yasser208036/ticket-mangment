@@ -30,9 +30,10 @@ class UpdateTicketTest extends TestCase
 
     public function test_changing_one_field_writes_one_row(): void
     {
-        $ticket = Ticket::factory()->create(['subject' => 'Original subject']);
+        $agent = User::factory()->agent()->create();
+        $ticket = Ticket::factory()->assignedTo($agent)->create(['subject' => 'Original subject']);
 
-        $this->asAgent()->patchJson($this->url($ticket), ['subject' => 'Updated subject'])->assertOk();
+        $this->asAgent($agent)->patchJson($this->url($ticket), ['subject' => 'Updated subject'])->assertOk();
 
         $rows = TicketActivity::where('ticket_id', $ticket->getKey())->get();
         $this->assertCount(1, $rows);
@@ -44,11 +45,12 @@ class UpdateTicketTest extends TestCase
 
     public function test_changing_three_fields_writes_three_distinct_rows(): void
     {
-        $ticket = Ticket::factory()->create();
+        $agent = User::factory()->agent()->create();
+        $ticket = Ticket::factory()->assignedTo($agent)->create();
         $category = Category::factory()->create();
         $priority = Priority::query()->where('is_default', false)->firstOrFail();
 
-        $this->asAgent()->patchJson($this->url($ticket), [
+        $this->asAgent($agent)->patchJson($this->url($ticket), [
             'subject' => 'A different subject entirely',
             'category_id' => $category->getKey(),
             'priority_id' => $priority->getKey(),
@@ -64,13 +66,30 @@ class UpdateTicketTest extends TestCase
 
     public function test_changing_nothing_writes_no_row_and_leaves_updated_at_untouched(): void
     {
-        $ticket = Ticket::factory()->create(['subject' => 'Unchanged subject']);
+        $agent = User::factory()->agent()->create();
+        $ticket = Ticket::factory()->assignedTo($agent)->create(['subject' => 'Unchanged subject']);
         $updatedAtBefore = $ticket->updated_at;
 
-        $this->asAgent()->patchJson($this->url($ticket), ['subject' => 'Unchanged subject'])->assertOk();
+        $this->asAgent($agent)->patchJson($this->url($ticket), ['subject' => 'Unchanged subject'])->assertOk();
 
         $this->assertSame(0, TicketActivity::where('ticket_id', $ticket->getKey())->count());
         $this->assertTrue($ticket->fresh()->updated_at->equalTo($updatedAtBefore));
+    }
+
+    public function test_an_agent_not_holding_the_ticket_is_forbidden(): void
+    {
+        $ticket = Ticket::factory()->create();
+        $other = User::factory()->agent()->create();
+
+        $this->asAgent($other)->patchJson($this->url($ticket), ['subject' => 'Hijacked'])->assertForbidden();
+    }
+
+    public function test_an_admin_may_update_any_ticket(): void
+    {
+        $ticket = Ticket::factory()->create(['subject' => 'Original subject']);
+        $admin = User::factory()->admin()->create();
+
+        $this->withToken($this->tokenFor($admin))->patchJson($this->url($ticket), ['subject' => 'Updated by admin'])->assertOk();
     }
 
     /** @return list<array{string, mixed}> */
@@ -95,9 +114,10 @@ class UpdateTicketTest extends TestCase
     #[DataProvider('prohibitedFieldsProvider')]
     public function test_a_prohibited_field_is_rejected(string $field, mixed $value): void
     {
-        $ticket = Ticket::factory()->create();
+        $agent = User::factory()->agent()->create();
+        $ticket = Ticket::factory()->assignedTo($agent)->create();
 
-        $this->asAgent()->patchJson($this->url($ticket), [$field => $value])
+        $this->asAgent($agent)->patchJson($this->url($ticket), [$field => $value])
             ->assertUnprocessable()
             ->assertJsonValidationErrors($field);
     }
@@ -107,9 +127,9 @@ class UpdateTicketTest extends TestCase
         return "/api/v1/tickets/{$ticket->id}";
     }
 
-    private function asAgent(): static
+    private function asAgent(User $agent): static
     {
-        return $this->withToken($this->tokenFor(User::factory()->agent()->create()));
+        return $this->withToken($this->tokenFor($agent));
     }
 
     private function tokenFor(User $user): string

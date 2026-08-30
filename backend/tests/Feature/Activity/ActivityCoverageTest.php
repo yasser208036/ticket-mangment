@@ -24,12 +24,18 @@ class ActivityCoverageTest extends TestCase
         'updated' => 'Tests\Feature\Tickets\UpdateTicketTest',
         'deleted' => 'Tests\Feature\Tickets\DeleteTicketTest',
         'assigned' => 'Tests\Feature\Tickets\AssignTicketTest',
-        'claimed' => 'Tests\Feature\Tickets\ClaimTicketTest',
+        // 'claimed' is historical only: self-claim was removed (Story 58) in
+        // favour of assignment requests. Old rows still exist in the trail
+        // and the enum case stays for them; nothing in application code
+        // writes it any more, so it is mapped to the test that replaced it.
+        'claimed' => 'Tests\Feature\Tickets\AssignmentRequestTest',
         'unassigned' => 'Tests\Feature\Tickets\AssignTicketTest',
         'status_changed' => 'Tests\Feature\Tickets\TicketStatusTest',
         'reopened' => 'Tests\Feature\Tickets\TicketStatusTest',
         'escalated' => 'Tests\Feature\Tickets\TicketEscalateTest',
         'stale' => 'Tests\Feature\Console\FlagStaleTicketsTest',
+        'assignment_requested' => 'Tests\Feature\Tickets\AssignmentRequestTest',
+        'assignment_request_declined' => 'Tests\Feature\Admin\AssignmentRequestReviewTest',
     ];
 
     public function test_every_event_case_has_a_producing_test(): void

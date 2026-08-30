@@ -28,6 +28,14 @@ class IndexTicketRequest extends FormRequest
         if (is_string($q = $this->input('q'))) {
             $this->merge(['q' => trim($q)]);
         }
+        // The SPA sends the JS-boolean spelling ('true'/'false'), which the
+        // `boolean` rule's strict acceptable-list ([true, false, 0, 1, '0',
+        // '1']) does not include -- only the controller's $request->boolean()
+        // read is that lenient. Normalize here so both agree; a genuinely
+        // invalid value becomes null and still fails the `boolean` rule below.
+        if ($this->has('escalated')) {
+            $this->merge(['escalated' => filter_var($this->input('escalated'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)]);
+        }
     }
 
     public function rules(): array

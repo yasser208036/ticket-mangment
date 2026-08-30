@@ -48,8 +48,15 @@ class TicketEscalatedNotificationTest extends TestCase
         return Ticket::factory()->create(['status_id' => $this->statusId($slug)]);
     }
 
+    /**
+     * The acting agent must hold the ticket to escalate it (Story 56's
+     * TicketPolicy rewrite); an admin actor is unaffected by this, so
+     * assigning unconditionally keeps every call site here unchanged.
+     */
     private function escalate(Ticket $ticket, User $actor, string $reason): TestResponse
     {
+        Ticket::query()->whereKey($ticket->getKey())->update(['assigned_to' => $actor->getKey()]);
+
         return $this->actingAs($actor)->postJson(route('tickets.escalate', $ticket), ['reason' => $reason]);
     }
 

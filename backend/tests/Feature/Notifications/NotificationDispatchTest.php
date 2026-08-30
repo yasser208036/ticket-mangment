@@ -61,6 +61,10 @@ class NotificationDispatchTest extends TestCase
         $agent = User::factory()->agent()->create();
         $assignee = User::factory()->agent()->create();
         $requester = Requester::factory()->create();
+        // The account IS the requester (Story 56): a login whose email
+        // matches the fixture requester row, so the endpoint's own
+        // Requester::firstOrCreate() reuses it rather than making a second one.
+        $endUser = User::factory()->endUser()->create(['name' => $requester->name, 'email' => $requester->email]);
 
         // Explicit, out-of-range references: TicketReferenceGenerator (used by
         // the real POST /tickets endpoint below) and TicketFactory's own
@@ -68,9 +72,12 @@ class NotificationDispatchTest extends TestCase
         // fixture tickets built here must not collide with the one the
         // 'created' action is about to insert for real.
         $assignedTicket = Ticket::factory()->create(['reference' => 'TKT-9999-001', 'status_id' => $this->statusId('open')]);
-        $statusTicket = Ticket::factory()->create(['reference' => 'TKT-9999-002', 'status_id' => $this->statusId('open')]);
+        // 'status' and 'escalated' both require the acting agent to hold the
+        // ticket (Story 56's TicketPolicy rewrite), so both fixtures are
+        // assigned to $agent up front.
+        $statusTicket = Ticket::factory()->assignedTo($agent)->create(['reference' => 'TKT-9999-002', 'status_id' => $this->statusId('open')]);
         $escalationAdmins = User::factory()->admin()->count(3)->create();
-        $escalatedTicket = Ticket::factory()->create(['reference' => 'TKT-9999-003', 'status_id' => $this->statusId('open')]);
+        $escalatedTicket = Ticket::factory()->assignedTo($agent)->create(['reference' => 'TKT-9999-003', 'status_id' => $this->statusId('open')]);
 
         return [
             'assigned' => [
@@ -83,8 +90,7 @@ class NotificationDispatchTest extends TestCase
                 'jobs' => 1,
             ],
             'created' => [
-                'action' => fn () => $this->actingAs($agent)->postJson(route('tickets.store'), [
-                    'requester' => ['name' => $requester->name, 'email' => $requester->email],
+                'action' => fn () => $this->actingAs($endUser)->postJson(route('tickets.store'), [
                     'subject' => 'Dispatch test ticket',
                     'description' => 'Body for the dispatch test.',
                     'category_id' => Category::query()->value('id'),
@@ -155,10 +161,9 @@ class NotificationDispatchTest extends TestCase
             }
         });
 
-        $agent = User::factory()->agent()->create();
+        $endUser = User::factory()->endUser()->create(['name' => 'Rollback Test', 'email' => 'rollback@example.test']);
 
-        $this->actingAs($agent)->postJson(route('tickets.store'), [
-            'requester' => ['name' => 'Rollback Test', 'email' => 'rollback@example.test'],
+        $this->actingAs($endUser)->postJson(route('tickets.store'), [
             'subject' => 'Rollback test',
             'description' => 'Body.',
             'category_id' => Category::query()->value('id'),

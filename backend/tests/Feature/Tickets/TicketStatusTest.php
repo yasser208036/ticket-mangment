@@ -54,10 +54,10 @@ class TicketStatusTest extends TestCase
 
     public function test_the_change_writes_one_status_changed_row(): void
     {
-        $ticket = $this->ticketAt('new');
+        $agent = User::factory()->agent()->create();
+        $ticket = Ticket::factory()->assignedTo($agent)->create(['status_id' => $this->statusId('new')]);
         $newId = $ticket->status_id;
         $openId = $this->statusId('open');
-        $agent = User::factory()->agent()->create();
 
         $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), ['status_id' => $openId])->assertOk();
 
@@ -360,7 +360,7 @@ class TicketStatusTest extends TestCase
     {
         $unresolved = $this->ticketAt('new');
         $resolved = $this->ticketAt('in-progress');
-        $token = $this->tokenFor(User::factory()->agent()->create());
+        $token = $this->tokenFor($this->sharedAgent());
         $this->withToken($token)->postJson($this->url($resolved), ['status_id' => $this->statusId('resolved'), 'resolution' => 'Fixed the underlying cause.'])->assertOk();
 
         DB::enableQueryLog();
@@ -529,7 +529,7 @@ class TicketStatusTest extends TestCase
         $ticket->save();
         $priorityId = $ticket->priority_id;
 
-        $this->asAgent()->postJson($this->url($ticket), ['status_id' => $this->statusId('reopened'), 'reason' => 'The same disk failed a second time.'])->assertOk();
+        $this->withToken($this->tokenFor($agent))->postJson($this->url($ticket), ['status_id' => $this->statusId('reopened'), 'reason' => 'The same disk failed a second time.'])->assertOk();
 
         $fresh = $ticket->fresh();
         $this->assertSame($agent->id, $fresh->assigned_to);
@@ -578,19 +578,25 @@ class TicketStatusTest extends TestCase
 
     public function test_show_query_cost_with_reopen_count(): void
     {
-        // Measured, 2026-08-28: 12 queries for GET /tickets/{id} on an
-        // unresolved ticket. test_resolution_query_cost separately pins the
-        // resolved ticket's cost at this figure + 2 (Story 33's resolution
-        // lookup), so together the two tests pin all three numbers this
-        // story's loadCount and Story 32/33's other per-caller keys cost.
-        $ticket = $this->ticketAt('new');
-        $token = $this->tokenFor(User::factory()->agent()->create());
+        // Measured, 2026-08-29: 13 queries for GET /tickets/{id} on an
+        // unresolved, UNASSIGNED ticket -- an unassigned ticket is viewable by
+        // any agent (TicketPolicy::view() permits assigned_to === null), so
+        // this deliberately bypasses ticketAt(), which now assigns every
+        // ticket it builds to the shared agent for write-path authorization.
+        // Was 12 before Story 58 added TicketResource's
+        // my_pending_assignment_request lookup, which runs on every show
+        // request. test_resolution_query_cost separately pins the resolved
+        // ticket's cost at this figure + 2 (Story 33's resolution lookup), so
+        // together the two tests pin all three numbers this story's
+        // loadCount and Story 32/33's other per-caller keys cost.
+        $ticket = Ticket::factory()->create(['status_id' => $this->statusId('new')]);
+        $token = $this->tokenFor($this->sharedAgent());
         DB::enableQueryLog();
         $this->withToken($token)->getJson("/api/v1/tickets/{$ticket->id}")->assertOk();
         $count = count(DB::getQueryLog());
         DB::disableQueryLog();
 
-        $this->assertSame(12, $count);
+        $this->assertSame(13, $count);
     }
 
     public function test_reopen_count_is_absent_from_other_responses(): void
@@ -625,14 +631,26 @@ class TicketStatusTest extends TestCase
         return Status::query()->where('slug', $slug)->firstOrFail()->getKey();
     }
 
+    /**
+     * Assigned to the shared per-test agent: changeStatus() now requires the
+     * acting agent to hold the ticket, so every ticket this helper builds
+     * must belong to whoever asAgent() authenticates as.
+     */
     private function ticketAt(string $slug): Ticket
     {
-        return Ticket::factory()->create(['status_id' => $this->statusId($slug)]);
+        return Ticket::factory()->assignedTo($this->sharedAgent())->create(['status_id' => $this->statusId($slug)]);
+    }
+
+    private ?User $sharedAgentInstance = null;
+
+    private function sharedAgent(): User
+    {
+        return $this->sharedAgentInstance ??= User::factory()->agent()->create();
     }
 
     private function asAgent(): static
     {
-        return $this->withToken($this->tokenFor(User::factory()->agent()->create()));
+        return $this->withToken($this->tokenFor($this->sharedAgent()));
     }
 
     private function asAdmin(): static

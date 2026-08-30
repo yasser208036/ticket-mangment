@@ -4,6 +4,7 @@ namespace App\Http\Resources\V1;
 
 use App\Enums\TicketActivityEvent;
 use App\Models\TicketActivity;
+use App\Models\TicketAssignmentRequest;
 use App\Services\TicketWorkflow;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -29,7 +30,11 @@ class TicketResource extends JsonResource
             'resolved_at' => $this->resolved_at?->toIso8601String(),
             'closed_at' => $this->closed_at?->toIso8601String(),
             'escalation_reason' => $this->when($request->routeIs('tickets.show'), fn () => $this->escalation_reason),
-            'can' => $this->when($request->routeIs('tickets.show'), fn () => ['update' => $request->user()->can('update', $this->resource), 'assign' => $request->user()->can('assign', $this->resource), 'claim' => $request->user()->can('claim', $this->resource) && $this->assigned_to === null, 'change_status' => $request->user()->can('changeStatus', $this->resource), 'escalate' => $request->user()->can('escalate', $this->resource) && ! $this->status->is_terminal, 'delete' => $request->user()->can('delete', $this->resource), 'add_note' => $request->user()->can('addNote', $this->resource)]),
+            'can' => $this->when($request->routeIs('tickets.show'), fn () => ['update' => $request->user()->can('update', $this->resource), 'assign' => $request->user()->can('assign', $this->resource), 'request_assignment' => $request->user()->can('requestAssignment', $this->resource) && $this->assigned_to === null, 'change_status' => $request->user()->can('changeStatus', $this->resource), 'escalate' => $request->user()->can('escalate', $this->resource) && ! $this->status->is_terminal, 'delete' => $request->user()->can('delete', $this->resource), 'add_note' => $request->user()->can('addNote', $this->resource)]),
+            'my_pending_assignment_request' => $this->when($request->routeIs('tickets.show'), fn (): bool => TicketAssignmentRequest::query()->pending()
+                ->where('ticket_id', $this->id)
+                ->where('user_id', $request->user()->getKey())
+                ->exists()),
             'allowed_transitions' => $this->when($request->routeIs('tickets.show'), fn () => StatusResource::collection(app(TicketWorkflow::class)->allowedTransitions($this->resource, $request->user()))->resolve()),
             'resolution' => $this->when($request->routeIs('tickets.show'), fn () => $this->currentResolution()),
             // `?? 0`: loadCount() sets this attribute only on the show route --
