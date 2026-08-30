@@ -265,7 +265,7 @@ onMounted(() => {
               @change="changeEscalation"
               class="h-9 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
-              <option value="">Any escalation</option>
+              <option value="">All</option>
               <option value="true">Escalated</option>
               <option value="false">Not escalated</option>
             </select>
