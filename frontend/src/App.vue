@@ -18,6 +18,15 @@ const userInitials = computed(() => {
     .slice(0, 2)
 })
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrator',
+  agent: 'Support Agent',
+  user: 'Requester',
+}
+const roleLabel = computed(
+  () => ROLE_LABELS[auth.user?.role ?? ''] ?? auth.user?.role,
+)
+
 watch(
   () => route.path,
   () => {
@@ -86,6 +95,7 @@ async function signOut(): Promise<void> {
               Tickets
             </RouterLink>
             <RouterLink
+              v-if="auth.isEndUser"
               :to="{ name: 'new-ticket' }"
               class="rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
               active-class="bg-indigo-50 text-indigo-700 font-semibold"
@@ -123,6 +133,15 @@ async function signOut(): Promise<void> {
             >
               Workload
             </RouterLink>
+            <RouterLink
+              v-if="auth.isAdmin"
+              :to="{ name: 'admin-assignment-requests' }"
+              class="rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
+              active-class="bg-indigo-50 text-indigo-700 font-semibold"
+              data-testid="nav-assignment-requests"
+            >
+              Assignment requests
+            </RouterLink>
           </nav>
         </div>
 
@@ -144,7 +163,7 @@ async function signOut(): Promise<void> {
               <span
                 class="text-[10px] font-medium uppercase tracking-wider text-slate-500"
               >
-                {{ auth.user?.role }}
+                {{ roleLabel }}
               </span>
             </div>
           </div>
@@ -236,6 +255,7 @@ async function signOut(): Promise<void> {
             Tickets
           </RouterLink>
           <RouterLink
+            v-if="auth.isEndUser"
             :to="{ name: 'new-ticket' }"
             class="rounded-lg px-3 py-2 hover:bg-slate-100"
             active-class="bg-indigo-50 text-indigo-700 font-semibold"
@@ -272,6 +292,14 @@ async function signOut(): Promise<void> {
               data-testid="nav-workload"
             >
               Workload
+            </RouterLink>
+            <RouterLink
+              :to="{ name: 'admin-assignment-requests' }"
+              class="rounded-lg px-3 py-2 hover:bg-slate-100"
+              active-class="bg-indigo-50 text-indigo-700 font-semibold"
+              data-testid="nav-assignment-requests"
+            >
+              Assignment requests
             </RouterLink>
           </template>
           <div class="my-1 border-t border-slate-100" />

@@ -7,9 +7,11 @@ import EscalationBadge from '../components/EscalationBadge.vue'
 import TicketFilterBar from '../components/TicketFilterBar.vue'
 import { relativeAge } from '../lib/relativeTime'
 import { fromQuery, toQuery } from '../lib/ticketQuery'
+import { useAuthStore } from '../stores/auth'
 import { useTicketsStore } from '../stores/tickets'
 
 const store = useTicketsStore()
+const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const pageSizes = [15, 25, 50, 100]
@@ -88,7 +90,7 @@ watch(() => route.fullPath, hydrateFromRoute, { deep: true })
         </span>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div v-if="auth.isEndUser" class="flex items-center gap-3">
         <RouterLink
           :to="{ name: 'new-ticket' }"
           class="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition-all hover:bg-indigo-700 active:scale-95"

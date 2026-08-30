@@ -70,7 +70,7 @@ function seedMasterData(): void {
   ]
 }
 
-function mountBar(role: 'agent' | 'admin' = 'agent') {
+function mountBar(role: 'agent' | 'admin' | 'user' = 'agent') {
   const pinia = createPinia()
   setActivePinia(pinia)
   seedMasterData()
@@ -214,5 +214,12 @@ describe('TicketFilterBar', () => {
     expect(
       wrapper.findAll('[data-testid="filter-assignee"] option'),
     ).toHaveLength(3)
+  })
+
+  it('renders no assignee control for an end user', async () => {
+    const { wrapper } = mountBar('user')
+    await flushPromises()
+    expect(listUsers).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="filter-assignee"]').exists()).toBe(false)
   })
 })

@@ -33,7 +33,8 @@ export async function authGuard(
   if (to.meta.public)
     return to.name === 'login' && auth.isAuthenticated ? { name: 'home' } : true
   if (!auth.isAuthenticated) return loginRoute(to.fullPath)
-  if (to.meta.role === 'admin' && !auth.isAdmin) return { name: 'forbidden' }
+  if (to.meta.roles && !to.meta.roles.includes(auth.user!.role))
+    return { name: 'forbidden' }
   void useMasterDataStore().ensureLoaded()
   return true
 }

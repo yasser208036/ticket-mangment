@@ -1,8 +1,8 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { AxiosError } from 'axios'
 import type { InternalAxiosRequestConfig } from 'axios'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deleteUser, listUsers } from '../api/users'
 import type { AdminUser } from '../api/users'
 import { useAuthStore } from '../stores/auth'
@@ -40,10 +40,23 @@ function failure(status: number, data: unknown): AxiosError {
   return error
 }
 
+// A dialog opened during a test (UserDeleteDialog, UserPasswordDialog) is
+// teleported into the real document.body, which -- unlike the wrapper's own
+// detached root -- survives past the end of a test unless explicitly
+// unmounted; this is tracked so afterEach can remove it.
+let mounted: ReturnType<typeof mount> | undefined
+
 async function render() {
-  const wrapper = mount(AdminUsersView)
+  mounted = mount(AdminUsersView)
   await flushPromises()
-  return wrapper
+  return mounted
+}
+
+// UserDeleteDialog and UserPasswordDialog render via <Teleport to="body">, so
+// their content lands as a sibling of the wrapper's own root in the real DOM,
+// not a descendant -- query document.body directly rather than the wrapper.
+function body() {
+  return new DOMWrapper(document.body)
 }
 
 describe('AdminUsersView — row actions', () => {
@@ -68,6 +81,11 @@ describe('AdminUsersView — row actions', () => {
       })
   })
 
+  afterEach(() => {
+    mounted?.unmount()
+    mounted = undefined
+  })
+
   it('offers reset and delete on other rows only', async () => {
     const wrapper = await render()
     expect(wrapper.findAll('[data-testid="users-delete"]')).toHaveLength(1)
@@ -86,7 +104,7 @@ describe('AdminUsersView — row actions', () => {
     await wrapper.get('[data-testid="users-delete"]').trigger('click')
     await flushPromises()
     expect(deleteUser).toHaveBeenCalledWith(2, undefined)
-    expect(wrapper.find('[data-testid="user-delete"]').exists()).toBe(false)
+    expect(body().find('[data-testid="user-delete"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="users-notice"]').text()).toContain(
       'Agent was deleted.',
     )
@@ -103,7 +121,7 @@ describe('AdminUsersView — row actions', () => {
     const wrapper = await render()
     await wrapper.get('[data-testid="users-delete"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="user-delete-count"]').text()).toContain(
+    expect(body().get('[data-testid="user-delete-count"]').text()).toContain(
       '2',
     )
   })
@@ -118,7 +136,7 @@ describe('AdminUsersView — row actions', () => {
     const wrapper = await render()
     await wrapper.get('[data-testid="users-delete"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="user-delete"]').exists()).toBe(false)
+    expect(body().find('[data-testid="user-delete"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="users-error"]').text()).toContain(
       'This is the last active administrator.',
     )
@@ -128,7 +146,7 @@ describe('AdminUsersView — row actions', () => {
     const wrapper = await render()
     await wrapper.get('[data-testid="users-reset-password"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="user-password-form"]').exists()).toBe(
+    expect(body().find('[data-testid="user-password-form"]').exists()).toBe(
       true,
     )
   })

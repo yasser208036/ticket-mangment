@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import CategoryBadge from '../components/CategoryBadge.vue'
 import ColorBadge from '../components/ColorBadge.vue'
 import TicketActionToolbar from '../components/TicketActionToolbar.vue'
 import TicketAssignDialog from '../components/TicketAssignDialog.vue'
+import TicketDeleteDialog from '../components/TicketDeleteDialog.vue'
+import TicketEditDialog from '../components/TicketEditDialog.vue'
 import TicketEscalateDialog from '../components/TicketEscalateDialog.vue'
 import TicketNoteComposer from '../components/TicketNoteComposer.vue'
+import TicketRequestAssignmentDialog from '../components/TicketRequestAssignmentDialog.vue'
 import TicketStatusDialog from '../components/TicketStatusDialog.vue'
 import TicketTimeline from '../components/TicketTimeline.vue'
 import { relativeAge } from '../lib/relativeTime'
@@ -14,10 +17,14 @@ import { REOPENED_SLUG } from '../api/statuses'
 import { useTicketsStore } from '../stores/tickets'
 
 const route = useRoute()
+const router = useRouter()
 const store = useTicketsStore()
 const assignOpen = ref(false)
+const editOpen = ref(false)
 const escalateOpen = ref(false)
 const statusOpen = ref(false)
+const requestAssignmentOpen = ref(false)
+const deleteOpen = ref(false)
 
 const load = () => {
   const id = Number(route.params.id)
@@ -26,6 +33,13 @@ const load = () => {
 }
 onMounted(load)
 watch(() => route.params.id, load)
+
+async function onDeleted(): Promise<void> {
+  deleteOpen.value = false
+  // replace, not push -- the deleted ticket's URL must not sit in history,
+  // or Back would only land on its not-found state.
+  await router.replace({ name: 'tickets' })
+}
 </script>
 
 <template>
@@ -119,6 +133,43 @@ watch(() => route.params.id, load)
       </RouterLink>
     </section>
 
+    <!-- Escalated Out of View State -->
+    <section
+      v-else-if="store.escalatedOutOfView"
+      data-testid="ticket-escalated-away"
+      class="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-12 text-center shadow-sm"
+    >
+      <div
+        class="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-600"
+      >
+        <svg
+          class="h-6 w-6"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+          />
+        </svg>
+      </div>
+      <h2 class="mt-4 text-lg font-bold text-slate-900">Ticket escalated</h2>
+      <p class="mt-1 text-sm text-slate-500">
+        It has been reassigned to an administrator and is no longer in your
+        queue.
+      </p>
+      <RouterLink
+        :to="{ name: 'tickets' }"
+        data-testid="ticket-escalated-away-back"
+        class="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+      >
+        Back to tickets
+      </RouterLink>
+    </section>
+
     <!-- Error State -->
     <div
       v-else-if="store.detailError"
@@ -186,8 +237,11 @@ watch(() => route.params.id, load)
             <TicketActionToolbar
               :ticket="store.current"
               @assign="assignOpen = true"
+              @edit="editOpen = true"
               @escalate="escalateOpen = true"
               @status="statusOpen = true"
+              @request-assignment="requestAssignmentOpen = true"
+              @delete="deleteOpen = true"
             />
           </div>
         </div>
@@ -200,11 +254,32 @@ watch(() => route.params.id, load)
         @close="assignOpen = false"
       />
 
+      <TicketEditDialog
+        v-if="editOpen && store.current"
+        :ticket="store.current"
+        @saved="editOpen = false"
+        @close="editOpen = false"
+      />
+
+      <TicketDeleteDialog
+        v-if="deleteOpen && store.current"
+        :ticket="store.current"
+        @deleted="onDeleted"
+        @close="deleteOpen = false"
+      />
+
       <TicketEscalateDialog
         v-if="escalateOpen && store.current"
         :ticket="store.current"
         @escalated="escalateOpen = false"
         @close="escalateOpen = false"
+      />
+
+      <TicketRequestAssignmentDialog
+        v-if="requestAssignmentOpen && store.current"
+        :ticket="store.current"
+        @requested="requestAssignmentOpen = false"
+        @close="requestAssignmentOpen = false"
       />
 
       <TicketStatusDialog
@@ -287,6 +362,30 @@ watch(() => route.params.id, load)
             {{ store.current.escalated_by?.name }}
           </p>
         </div>
+      </section>
+
+      <!-- Pending Assignment Request Banner -->
+      <section
+        v-if="store.current.my_pending_assignment_request"
+        data-testid="ticket-pending-assignment-request"
+        class="flex items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 p-5 text-indigo-900 shadow-xs"
+      >
+        <svg
+          class="h-5 w-5 shrink-0 text-indigo-600 mt-0.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m1.586-9.414a2 2 0 112.828 2.828L12.828 15H10v-2.828l8.586-8.586z"
+          />
+        </svg>
+        <p class="text-sm font-medium">
+          You asked for this ticket. An administrator is reviewing it.
+        </p>
       </section>
 
       <!-- 2-Column Content Grid -->
@@ -378,24 +477,23 @@ watch(() => route.params.id, load)
               <div class="min-w-0">
                 <p class="truncate text-sm font-bold text-slate-900">
                   {{ store.current.requester.name }}
-                  {{ store.current.requester.email }}
                 </p>
                 <p
                   v-if="store.current.requester.company"
                   class="truncate text-xs text-slate-500"
                 >
-                  {{ store.current.requester.company }}
+                  {{ store.current.requester.email }}
                 </p>
               </div>
             </div>
 
-            <div
+            <!-- <div
               v-if="store.current.requester.phone"
               class="border-t border-slate-100 pt-3 text-xs text-slate-600"
             >
               <span class="font-medium text-slate-400">Phone: </span
               >{{ store.current.requester.phone }}
-            </div>
+            </div> -->
           </div>
 
           <!-- Assignment & Creator Card -->

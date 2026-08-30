@@ -227,7 +227,7 @@ onMounted(() => {
         <!-- Single selects group — pushed to the right on wide screens -->
         <div class="flex flex-wrap items-end gap-3 sm:ml-auto">
           <!-- Assignee -->
-          <div class="flex flex-col gap-1">
+          <div v-if="!auth.isEndUser" class="flex flex-col gap-1">
             <label
               class="text-[11px] font-bold uppercase tracking-wider text-slate-500"
               >Assignee</label

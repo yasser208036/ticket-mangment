@@ -134,3 +134,14 @@ describe('noteBody', () => {
     ).toBeNull()
   })
 })
+
+describe('assignment request prose', () => {
+  it('renders assignment_requested and assignment_request_declined through the generic fallback', () => {
+    expect(activitySentence(activity({ event: 'assignment_requested' }))).toBe(
+      'Ahmed assignment requested',
+    )
+    expect(
+      activitySentence(activity({ event: 'assignment_request_declined' })),
+    ).toBe('Ahmed assignment request declined')
+  })
+})

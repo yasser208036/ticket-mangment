@@ -55,10 +55,11 @@ const ticket: TicketDetail = {
   allowed_transitions: [],
   resolution: null,
   reopen_count: 0,
+  my_pending_assignment_request: false,
   can: {
     update: true,
     assign: true,
-    claim: true,
+    request_assignment: true,
     change_status: true,
     escalate: true,
     delete: true,
@@ -108,10 +109,58 @@ describe('TicketActionToolbar', () => {
     expect(wrapper.find('[data-testid="action-assign"]').exists()).toBe(false)
   })
 
-  it('Edit is still disabled', () => {
+  it('renders the request-assignment button and emits request-assignment on click', async () => {
     const wrapper = mount(TicketActionToolbar, { props: { ticket } })
+    const button = wrapper.get('[data-testid="action-request-assignment"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await button.trigger('click')
+    expect(wrapper.emitted('request-assignment')).toHaveLength(1)
+  })
+
+  it('hides the request-assignment button when can.request_assignment is false', () => {
+    const wrapper = mount(TicketActionToolbar, {
+      props: {
+        ticket: {
+          ...ticket,
+          can: { ...ticket.can, request_assignment: false },
+        },
+      },
+    })
     expect(
-      wrapper.get('[data-testid="action-edit"]').attributes('disabled'),
-    ).toBeDefined()
+      wrapper.find('[data-testid="action-request-assignment"]').exists(),
+    ).toBe(false)
+  })
+
+  it('renders the edit button enabled and emits edit on click', async () => {
+    const wrapper = mount(TicketActionToolbar, { props: { ticket } })
+    const button = wrapper.get('[data-testid="action-edit"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await button.trigger('click')
+    expect(wrapper.emitted('edit')).toHaveLength(1)
+  })
+
+  it('hides the edit button when can.update is false', () => {
+    const wrapper = mount(TicketActionToolbar, {
+      props: { ticket: { ...ticket, can: { ...ticket.can, update: false } } },
+    })
+    expect(wrapper.find('[data-testid="action-edit"]').exists()).toBe(false)
+  })
+
+  it('renders the delete button enabled and emits delete on click', async () => {
+    const wrapper = mount(TicketActionToolbar, { props: { ticket } })
+    const button = wrapper.get('[data-testid="action-delete"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await button.trigger('click')
+    expect(wrapper.emitted('delete')).toHaveLength(1)
+  })
+
+  it('hides the delete button when can.delete is false', () => {
+    const wrapper = mount(TicketActionToolbar, {
+      props: { ticket: { ...ticket, can: { ...ticket.can, delete: false } } },
+    })
+    expect(wrapper.find('[data-testid="action-delete"]').exists()).toBe(false)
   })
 })

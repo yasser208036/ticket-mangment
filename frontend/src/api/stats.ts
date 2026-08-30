@@ -18,7 +18,7 @@ export interface PriorityCount {
   count: number
 }
 export interface TicketStats {
-  scope: 'own' | 'all'
+  scope: 'all' | 'assigned' | 'authored'
   total: number
   unassigned: number
   escalated: number

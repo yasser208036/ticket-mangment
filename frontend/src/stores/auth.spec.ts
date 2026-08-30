@@ -91,4 +91,39 @@ describe('auth store', () => {
     expect(auth.user).toBeNull()
     expect(localStorage.getItem('tm.token')).toBeNull()
   })
+
+  it('role predicates are false when signed out', () => {
+    const auth = useAuthStore()
+    expect(auth.isAdmin).toBe(false)
+    expect(auth.isAgent).toBe(false)
+    expect(auth.isEndUser).toBe(false)
+    expect(auth.isStaff).toBe(false)
+  })
+
+  it.each([
+    [
+      'admin',
+      { isAdmin: true, isAgent: false, isEndUser: false, isStaff: true },
+    ],
+    [
+      'agent',
+      { isAdmin: false, isAgent: true, isEndUser: false, isStaff: true },
+    ],
+    [
+      'user',
+      { isAdmin: false, isAgent: false, isEndUser: true, isStaff: false },
+    ],
+  ] as const)('role predicates for %s', async (role, expected) => {
+    vi.mocked(login).mockResolvedValue({
+      token: 'abc',
+      token_type: 'Bearer',
+      user: { ...agent, role },
+    })
+    const auth = useAuthStore()
+    await auth.login('a', 'p')
+    expect(auth.isAdmin).toBe(expected.isAdmin)
+    expect(auth.isAgent).toBe(expected.isAgent)
+    expect(auth.isEndUser).toBe(expected.isEndUser)
+    expect(auth.isStaff).toBe(expected.isStaff)
+  })
 })

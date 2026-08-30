@@ -1,6 +1,6 @@
 import client from './client'
 
-export type UserRole = 'admin' | 'agent'
+export type UserRole = 'admin' | 'agent' | 'user'
 
 export interface AuthUser {
   id: number

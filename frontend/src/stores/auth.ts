@@ -14,6 +14,11 @@ export const useAuthStore = defineStore('auth', () => {
   let hydration: Promise<void> | null = null
   const isAuthenticated = computed(() => user.value !== null)
   const isAdmin = computed(() => user.value?.role === 'admin')
+  const isAgent = computed(() => user.value?.role === 'agent')
+  /** A requester with a login: files tickets, sees only their own. */
+  const isEndUser = computed(() => user.value?.role === 'user')
+  /** Admin or agent. The predicate most screens actually want. */
+  const isStaff = computed(() => isAdmin.value || isAgent.value)
 
   async function login(email: string, password: string): Promise<void> {
     const response = await apiLogin(email, password)
@@ -61,6 +66,9 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     isAdmin,
+    isAgent,
+    isEndUser,
+    isStaff,
     login,
     hydrate,
     logout,

@@ -5,6 +5,9 @@ export function isUnauthorized(error: unknown): boolean {
 export function isNotFound(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 404
 }
+export function isForbidden(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 403
+}
 export function validationErrors(error: unknown): Record<string, string[]> {
   if (!axios.isAxiosError(error) || error.response?.status !== 422) return {}
   const data = error.response.data as

@@ -31,14 +31,21 @@ const totalPriorityTickets = computed(
 // The card's figure is scoped for an agent, so its link must be too, or a
 // three-ticket card lands on a fifty-ticket list. Keyed on `scope`, not on
 // the role -- the API decides, the view reports. `assignee: 'me'` is the same
-// URL sentinel the ticket list already parses.
+// URL sentinel the ticket list already parses. `scope === 'authored'` needs
+// no such narrowing: an end user's ticket list is already scoped server-side
+// to what they created, and `assignee: 'me'` there would mean *assigned* to
+// them -- the wrong filter, and it would return nothing.
 const escalatedTo = computed(() => ({
   name: 'tickets',
   query: {
     escalated: 'true',
-    ...(stats.data?.scope === 'own' ? { assignee: 'me' } : {}),
+    ...(stats.data?.scope === 'assigned' ? { assignee: 'me' } : {}),
   },
 }))
+
+const scopeLabel = computed(() =>
+  stats.data?.scope === 'all' ? 'Queue' : 'My tickets',
+)
 </script>
 
 <template>
@@ -117,7 +124,7 @@ const escalatedTo = computed(() => ({
             distribution.
           </p>
         </div>
-        <div class="flex items-center gap-3">
+        <div v-if="auth.isEndUser" class="flex items-center gap-3">
           <RouterLink
             :to="{ name: 'new-ticket' }"
             class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition-all hover:opacity-95 hover:shadow-lg active:scale-95"
@@ -143,6 +150,7 @@ const escalatedTo = computed(() => ({
       <!-- Stat Cards Grid -->
       <div class="grid gap-5 sm:grid-cols-3">
         <StatCard
+          v-if="!auth.isEndUser"
           label="My open tickets"
           :count="stats.data.mine_open"
           :to="{
@@ -152,6 +160,7 @@ const escalatedTo = computed(() => ({
           testid="stat-mine-open"
         />
         <StatCard
+          v-if="!auth.isEndUser"
           label="Unassigned"
           :count="stats.data.unassigned"
           :to="{ name: 'tickets', query: { assignee: 'unassigned' } }"
@@ -159,9 +168,9 @@ const escalatedTo = computed(() => ({
         />
         <StatCard
           :label="
-            stats.data.scope === 'own'
-              ? 'My escalated tickets'
-              : 'Escalated tickets'
+            stats.data.scope === 'all'
+              ? 'Escalated tickets'
+              : 'My escalated tickets'
           "
           :count="stats.data.escalated"
           :to="escalatedTo"
@@ -181,9 +190,9 @@ const escalatedTo = computed(() => ({
           >
             <h2 class="text-base font-bold text-slate-900">
               {{
-                stats.data.scope === 'own'
-                  ? 'My tickets by status'
-                  : 'Queue by status'
+                scopeLabel === 'Queue'
+                  ? 'Queue by status'
+                  : 'My tickets by status'
               }}
             </h2>
             <span

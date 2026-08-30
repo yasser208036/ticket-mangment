@@ -3,12 +3,14 @@ import { computed, ref } from 'vue'
 import {
   assignTicket,
   changeTicketStatus,
-  claimTicket,
   createTicket,
+  deleteTicket,
   escalateTicket,
   getTicket,
   listTickets,
+  updateTicket,
 } from '../api/tickets'
+import { requestAssignment as requestTicketAssignment } from '../api/assignmentRequests'
 import type {
   ChangeStatusPayload,
   CreateTicketPayload,
@@ -18,11 +20,12 @@ import type {
   AssigneeFilter,
   TicketDirection,
   TicketSort,
+  UpdateTicketPayload,
 } from '../api/tickets'
 import { addTicketNote, listTicketActivities } from '../api/activities'
 import type { TicketActivity } from '../api/activities'
 import type { Paginated } from '../api/pagination'
-import { errorMessage, isNotFound } from '../api/errors'
+import { errorMessage, isForbidden, isNotFound } from '../api/errors'
 import { EMPTY_QUERY_STATE } from '../lib/ticketQuery'
 import { useStatsStore } from './stats'
 export const useTicketsStore = defineStore('tickets', () => {
@@ -55,10 +58,17 @@ export const useTicketsStore = defineStore('tickets', () => {
   const detailLoading = ref(false)
   const detailError = ref<string | null>(null)
   const detailNotFound = ref(false)
+  // An agent escalating a ticket they hold reassigns it to an admin (see the
+  // visibility-scope decision), so they lose view access the instant the
+  // escalate succeeds. Set when the post-escalate refetch 403s for that
+  // reason, so the view can report success instead of a false error.
+  const escalatedOutOfView = ref(false)
   const assigning = ref(false)
-  const claiming = ref(false)
+  const requestingAssignment = ref(false)
   const escalating = ref(false)
   const changingStatus = ref(false)
+  const saving = ref(false)
+  const deleting = ref(false)
   const activities = ref<TicketActivity[]>([])
   const activitiesMeta = ref<Paginated<TicketActivity>['meta'] | null>(null)
   const activitiesLoading = ref(false)
@@ -77,6 +87,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     detailLoading.value = true
     detailError.value = null
     detailNotFound.value = false
+    escalatedOutOfView.value = false
     current.value = null
     try {
       current.value = await getTicket(id)
@@ -96,29 +107,32 @@ export const useTicketsStore = defineStore('tickets', () => {
     try {
       await assignTicket(id, assignedTo, reason)
       // Re-read rather than patching `current`: the assign response omits
-      // `can`, and can.claim flips the moment a ticket gains an assignee.
-      // `loadTicket()` is not reused here for the same reason changeStatus()
-      // avoids it -- it nulls `current` first, which momentarily fails the
-      // assign dialog's `v-if="... && store.current"` guard and unmounts it
-      // mid-submit, so the dialog never receives its own `assigned` emit.
+      // `can`, and can.request_assignment flips the moment a ticket gains an
+      // assignee. `loadTicket()` is not reused here for the same reason
+      // changeStatus() avoids it -- it nulls `current` first, which
+      // momentarily fails the assign dialog's `v-if="... && store.current"`
+      // guard and unmounts it mid-submit, so the dialog never receives its
+      // own `assigned` emit.
       current.value = await getTicket(id)
       void useStatsStore().load()
+      void loadActivities(id)
     } finally {
       assigning.value = false
     }
   }
-  async function claim(id: number): Promise<void> {
-    claiming.value = true
+  async function requestAssignment(id: number, note?: string): Promise<void> {
+    requestingAssignment.value = true
     try {
-      await claimTicket(id)
-      await loadTicket(id)
-      void useStatsStore().load()
+      await requestTicketAssignment(id, note)
+      current.value = await getTicket(id)
+      void loadActivities(id)
     } finally {
-      claiming.value = false
+      requestingAssignment.value = false
     }
   }
   async function escalate(id: number, reason: string): Promise<void> {
     escalating.value = true
+    escalatedOutOfView.value = false
     try {
       await escalateTicket(id, reason)
       // Re-read: escalating changes the priority, the assignee, and
@@ -126,8 +140,18 @@ export const useTicketsStore = defineStore('tickets', () => {
       // Not via loadTicket() -- it nulls `current` first, unmounting the
       // escalate dialog mid-confirm so its `escalated` emit is dropped. Same
       // hazard assign() and changeStatus() document.
-      current.value = await getTicket(id)
+      try {
+        current.value = await getTicket(id)
+      } catch (caughtError) {
+        // The escalate above already succeeded -- a 403 here means an agent
+        // just escalated a ticket they held and lost visibility of it as a
+        // result (it is now assigned to an admin), not that anything failed.
+        if (!isForbidden(caughtError)) throw caughtError
+        current.value = null
+        escalatedOutOfView.value = true
+      }
       void useStatsStore().load()
+      void loadActivities(id)
     } finally {
       escalating.value = false
     }
@@ -148,8 +172,47 @@ export const useTicketsStore = defineStore('tickets', () => {
       // mid-confirm so the dialog never receives its own `changed` emit.
       current.value = await getTicket(id)
       void useStatsStore().load()
+      void loadActivities(id)
     } finally {
       changingStatus.value = false
+    }
+  }
+  async function saveTicket(
+    id: number,
+    payload: UpdateTicketPayload,
+  ): Promise<void> {
+    saving.value = true
+    try {
+      await updateTicket(id, payload)
+      // The PATCH response has no `can` block (it is not the show route), so
+      // re-read the detail rather than assigning the response to `current`.
+      // Not via loadTicket() -- it nulls `current` first, unmounting the
+      // edit dialog mid-submit (v-if="editOpen && store.current") so its own
+      // `saved` emit is dropped. Same hazard assign(), escalate() and
+      // changeStatus() already avoid.
+      current.value = await getTicket(id)
+      void loadActivities(id)
+    } finally {
+      saving.value = false
+    }
+  }
+  async function removeTicket(id: number): Promise<void> {
+    deleting.value = true
+    try {
+      await deleteTicket(id)
+      // Deliberately does NOT null `current` here: the delete dialog is
+      // shown via v-if="deleteOpen && store.current", so nulling it before
+      // this function returns would unmount the dialog before its own
+      // `deleted` emit fires, and the caller's redirect would never run.
+      // The view navigates away right after its `deleted` handler runs,
+      // which discards `current` along with the rest of the page.
+      //
+      // The list is now stale by one row -- but only reload it if it has
+      // actually been fetched; calling load() unconditionally would fire a
+      // request for a list the user never opened.
+      if (meta.value !== null) await load()
+    } finally {
+      deleting.value = false
     }
   }
   async function loadActivities(id: number): Promise<void> {
@@ -294,15 +357,20 @@ export const useTicketsStore = defineStore('tickets', () => {
     detailLoading,
     detailError,
     detailNotFound,
+    escalatedOutOfView,
     loadTicket,
     assigning,
     assign,
-    claiming,
-    claim,
+    requestingAssignment,
+    requestAssignment,
     escalating,
     escalate,
     changingStatus,
     changeStatus,
+    saving,
+    saveTicket,
+    deleting,
+    removeTicket,
     activities,
     activitiesMeta,
     activitiesLoading,

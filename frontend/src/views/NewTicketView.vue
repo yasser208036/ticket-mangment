@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { errorMessage, validationErrors } from '../api/errors'
 import type { CreateTicketPayload } from '../api/tickets'
+import { listAgents, type AgentOption } from '../api/agents'
 import { useMasterDataStore } from '../stores/masterData'
 import { useTicketsStore } from '../stores/tickets'
 
@@ -11,9 +12,10 @@ const tickets = useTicketsStore()
 const router = useRouter()
 const submitting = ref(false)
 const message = ref('')
+const agents = ref<AgentOption[]>([])
+const assignedTo = ref<number>(0)
 
 const form = reactive<CreateTicketPayload>({
-  requester: { name: '', email: '', phone: '', company: '' },
   subject: '',
   description: '',
   category_id: 0,
@@ -28,9 +30,6 @@ function clearErrors(): void {
 
 function validate(): boolean {
   clearErrors()
-  if (!form.requester.name) errors['requester.name'] = 'Name is required.'
-  if (!/.+@.+\..+/.test(form.requester.email))
-    errors['requester.email'] = 'Valid email is required.'
   if (!form.subject) errors.subject = 'Subject is required.'
   if (form.subject.length > 255) errors.subject = 'Maximum 255 characters.'
   if (!form.description) errors.description = 'Description is required.'
@@ -44,7 +43,11 @@ async function submit(): Promise<void> {
   if (submitting.value || !validate()) return
   submitting.value = true
   try {
-    const payload = { ...form, priority_id: form.priority_id || undefined }
+    const payload = {
+      ...form,
+      priority_id: form.priority_id || undefined,
+      assigned_to: assignedTo.value || undefined,
+    }
     const ticket = await tickets.create(payload)
     await router.push({ name: 'ticket-detail', params: { id: ticket.id } })
   } catch (error) {
@@ -56,7 +59,18 @@ async function submit(): Promise<void> {
   }
 }
 
-onMounted(() => void masterData.ensureLoaded())
+onMounted(() => {
+  void masterData.ensureLoaded()
+  // Optional -- a failure here must not block filing the ticket, it just
+  // leaves the picker showing only "Let an administrator assign this".
+  listAgents()
+    .then((result) => {
+      agents.value = result
+    })
+    .catch(() => {
+      agents.value = []
+    })
+})
 </script>
 
 <template>
@@ -146,99 +160,6 @@ onMounted(() => void masterData.ensureLoaded())
       @submit.prevent="submit"
       class="space-y-6"
     >
-      <!-- Requester Card -->
-      <div
-        class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm space-y-4"
-      >
-        <div class="border-b border-slate-100 pb-3">
-          <h2 class="text-sm font-bold uppercase tracking-wider text-slate-900">
-            Requester Information
-          </h2>
-          <p class="text-xs text-slate-500">
-            Contact information of who reported the issue.
-          </p>
-        </div>
-
-        <div class="grid gap-4 sm:grid-cols-2">
-          <!-- Name -->
-          <div class="space-y-1">
-            <label class="text-xs font-semibold text-slate-700"
-              >Full Name *</label
-            >
-            <input
-              data-testid="new-ticket-requester-name"
-              v-model="form.requester.name"
-              type="text"
-              placeholder="e.g. Jane Doe"
-              class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-              :class="{
-                'border-rose-300 ring-2 ring-rose-100':
-                  errors['requester.name'],
-              }"
-            />
-            <span
-              v-if="errors['requester.name']"
-              data-testid="new-ticket-error-requester.name"
-              class="text-xs font-medium text-rose-600"
-            >
-              {{ errors['requester.name'] }}
-            </span>
-          </div>
-
-          <!-- Email -->
-          <div class="space-y-1">
-            <label class="text-xs font-semibold text-slate-700"
-              >Email Address *</label
-            >
-            <input
-              data-testid="new-ticket-requester-email"
-              v-model="form.requester.email"
-              type="email"
-              placeholder="e.g. jane@example.com"
-              class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-              :class="{
-                'border-rose-300 ring-2 ring-rose-100':
-                  errors['requester.email'],
-              }"
-            />
-            <span
-              v-if="errors['requester.email']"
-              class="text-xs font-medium text-rose-600"
-            >
-              {{ errors['requester.email'] }}
-            </span>
-          </div>
-
-          <!-- Phone -->
-          <div class="space-y-1">
-            <label class="text-xs font-semibold text-slate-700"
-              >Phone (Optional)</label
-            >
-            <input
-              data-testid="new-ticket-requester-phone"
-              v-model="form.requester.phone"
-              type="tel"
-              placeholder="e.g. +1 (555) 000-0000"
-              class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-            />
-          </div>
-
-          <!-- Company -->
-          <div class="space-y-1">
-            <label class="text-xs font-semibold text-slate-700"
-              >Company (Optional)</label
-            >
-            <input
-              data-testid="new-ticket-requester-company"
-              v-model="form.requester.company"
-              type="text"
-              placeholder="e.g. Acme Corp"
-              class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-            />
-          </div>
-        </div>
-      </div>
-
       <!-- Ticket Details Card -->
       <div
         class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm space-y-4"
@@ -328,6 +249,26 @@ onMounted(() => void masterData.ensureLoaded())
                 </option>
               </select>
             </div>
+          </div>
+
+          <!-- Assign to agent -->
+          <div class="space-y-1">
+            <label class="text-xs font-semibold text-slate-700"
+              >Assign to (Optional)</label
+            >
+            <select
+              data-testid="ticket-form-agent"
+              v-model.number="assignedTo"
+              class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+            >
+              <option :value="0">Let an administrator assign this</option>
+              <option v-for="agent in agents" :key="agent.id" :value="agent.id">
+                {{ agent.name }}
+              </option>
+            </select>
+            <p class="text-[11px] text-slate-400">
+              Optional — leave this if you are not sure who should handle it.
+            </p>
           </div>
 
           <!-- Description -->

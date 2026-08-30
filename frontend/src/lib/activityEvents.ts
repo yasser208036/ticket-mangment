@@ -33,6 +33,14 @@ const DESCRIPTORS: Record<string, EventDescriptor> = {
   stale: { color: '#78716C', path: 'M8 4v4l3 2' },
   deleted: { color: '#DC2626', path: 'M4 4h8M6 4V2h4v2M5 4l1 10h4l1-10' },
   note_added: { color: '#EA580C', path: 'M3 2h7l3 3v9H3zM9 2v4h4' },
+  assignment_requested: {
+    color: '#4F46E5',
+    path: 'M8 2a3 3 0 100 6 3 3 0 000-6zM2 14c0-3 3-5 6-5s6 2 6 5',
+  },
+  assignment_request_declined: {
+    color: '#B45309',
+    path: 'M8 2a3 3 0 100 6 3 3 0 000-6zM2 14c0-3 3-5 6-5s6 2 6 5M2 2l12 12',
+  },
 }
 
 export function eventDescriptor(event: string): EventDescriptor {

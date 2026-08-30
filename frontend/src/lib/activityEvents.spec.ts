@@ -40,8 +40,24 @@ describe('eventDescriptor', () => {
       'stale',
       'deleted',
       'note_added',
+      'assignment_requested',
+      'assignment_request_declined',
     ]) {
       expect(eventDescriptor(event).color).toMatch(HEX_PATTERN)
     }
+  })
+
+  it('gives assignment_requested a descriptor distinct from the fallback', () => {
+    const descriptor = eventDescriptor('assignment_requested')
+    expect(descriptor.color).not.toBe(
+      eventDescriptor('a_truly_fictional_event').color,
+    )
+  })
+
+  it('gives assignment_request_declined a descriptor distinct from the fallback', () => {
+    const descriptor = eventDescriptor('assignment_request_declined')
+    expect(descriptor.color).not.toBe(
+      eventDescriptor('a_truly_fictional_event').color,
+    )
   })
 })

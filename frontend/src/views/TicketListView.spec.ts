@@ -81,7 +81,10 @@ function paginated(rows: TicketListItem[]): Paginated<TicketListItem> {
   }
 }
 
-async function mountList(path = '/tickets') {
+async function mountList(
+  path = '/tickets',
+  role: 'admin' | 'agent' | 'user' = 'agent',
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   // The router's auth guard redirects an unauthenticated visitor to /login,
@@ -90,7 +93,7 @@ async function mountList(path = '/tickets') {
     id: 1,
     name: 'Agent',
     email: 'agent@example.test',
-    role: 'agent',
+    role,
     is_active: true,
     created_at: '2026-08-25T00:00:00Z',
   }
@@ -103,6 +106,24 @@ async function mountList(path = '/tickets') {
   await flushPromises()
   return { wrapper, router }
 }
+
+describe('TicketListView New ticket button', () => {
+  beforeEach(() => {
+    vi.mocked(listTickets).mockReset()
+    vi.mocked(listTickets).mockResolvedValue(paginated([]))
+  })
+
+  it('shows New ticket only for an end user, not an agent or admin', async () => {
+    const { wrapper: userWrapper } = await mountList('/tickets', 'user')
+    expect(userWrapper.text()).toContain('New ticket')
+
+    const { wrapper: agentWrapper } = await mountList('/tickets', 'agent')
+    expect(agentWrapper.text()).not.toContain('New ticket')
+
+    const { wrapper: adminWrapper } = await mountList('/tickets', 'admin')
+    expect(adminWrapper.text()).not.toContain('New ticket')
+  })
+})
 
 describe('TicketListView escalation column', () => {
   beforeEach(() => {

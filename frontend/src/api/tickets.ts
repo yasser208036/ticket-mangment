@@ -17,7 +17,7 @@ export interface TicketStaff {
 export interface TicketPermissions {
   update: boolean
   assign: boolean
-  claim: boolean
+  request_assignment: boolean
   change_status: boolean
   escalate: boolean
   delete: boolean
@@ -51,6 +51,7 @@ export interface TicketDetail extends Ticket {
   escalated_by: TicketStaff | null
   escalation_reason: string | null
   can: TicketPermissions
+  my_pending_assignment_request: boolean
   allowed_transitions: Status[]
   resolution: TicketResolution | null
   reopen_count: number
@@ -73,16 +74,11 @@ export interface TicketListQuery {
   direction?: TicketDirection
 }
 export interface CreateTicketPayload {
-  requester: {
-    name: string
-    email: string
-    phone?: string | null
-    company?: string | null
-  }
   subject: string
   description: string
   category_id: number
   priority_id?: number
+  assigned_to?: number
 }
 export async function createTicket(
   payload: CreateTicketPayload,
@@ -104,11 +100,6 @@ export async function assignTicket(
     `/tickets/${id}/assign`,
     { assigned_to: assignedTo, ...(reason ? { reason } : {}) },
   )
-  return data.data
-}
-
-export async function claimTicket(id: number): Promise<Ticket> {
-  const { data } = await client.post<{ data: Ticket }>(`/tickets/${id}/claim`)
   return data.data
 }
 
@@ -147,14 +138,15 @@ export async function listTickets(
   return data
 }
 
+export type UpdateTicketPayload = Partial<
+  Pick<
+    CreateTicketPayload,
+    'subject' | 'description' | 'category_id' | 'priority_id'
+  >
+>
 export async function updateTicket(
   id: number,
-  payload: Partial<
-    Pick<
-      CreateTicketPayload,
-      'subject' | 'description' | 'category_id' | 'priority_id'
-    >
-  >,
+  payload: UpdateTicketPayload,
 ): Promise<TicketDetail> {
   const { data } = await client.patch<{ data: TicketDetail }>(
     `/tickets/${id}`,

@@ -8,6 +8,7 @@ import ForbiddenView from '../views/ForbiddenView.vue'
 import HealthView from '../views/HealthView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import AdminWorkloadView from '../views/AdminWorkloadView.vue'
+import AdminAssignmentRequestsView from '../views/AdminAssignmentRequestsView.vue'
 import LoginView from '../views/LoginView.vue'
 import NewTicketView from '../views/NewTicketView.vue'
 import TicketDetailView from '../views/TicketDetailView.vue'
@@ -17,7 +18,7 @@ import { installAuthGuards } from './guards'
 declare module 'vue-router' {
   interface RouteMeta {
     public?: boolean
-    role?: UserRole
+    roles?: UserRole[]
   }
 }
 
@@ -43,22 +44,33 @@ export function createAppRouter(history: RouterHistory = createWebHistory()) {
         path: '/admin/users',
         name: 'admin-users',
         component: AdminUsersView,
-        meta: { role: 'admin' },
+        meta: { roles: ['admin'] },
       },
       {
         path: '/admin/categories',
         name: 'admin-categories',
         component: AdminCategoriesView,
-        meta: { role: 'admin' },
+        meta: { roles: ['admin'] },
       },
       {
         path: '/admin/workload',
         name: 'admin-workload',
         component: AdminWorkloadView,
-        meta: { role: 'admin' },
+        meta: { roles: ['admin'] },
+      },
+      {
+        path: '/admin/assignment-requests',
+        name: 'admin-assignment-requests',
+        component: AdminAssignmentRequestsView,
+        meta: { roles: ['admin'] },
       },
       { path: '/tickets', name: 'tickets', component: TicketListView },
-      { path: '/tickets/new', name: 'new-ticket', component: NewTicketView },
+      {
+        path: '/tickets/new',
+        name: 'new-ticket',
+        component: NewTicketView,
+        meta: { roles: ['user'] },
+      },
       {
         path: '/tickets/:id',
         name: 'ticket-detail',

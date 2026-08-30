@@ -4,8 +4,10 @@ defineProps<{ ticket: TicketDetail }>()
 const emit = defineEmits<{
   assign: []
   delete: []
+  edit: []
   escalate: []
   status: []
+  'request-assignment': []
 }>()
 </script>
 <template>
@@ -13,8 +15,8 @@ const emit = defineEmits<{
     <button
       v-if="ticket.can.update"
       data-testid="action-edit"
-      disabled
-      class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+      @click="emit('edit')"
+      class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs transition-all hover:bg-slate-50"
     >
       <svg
         class="h-3.5 w-3.5"
@@ -52,6 +54,28 @@ const emit = defineEmits<{
         />
       </svg>
       <span>Assign</span>
+    </button>
+
+    <button
+      v-if="ticket.can.request_assignment"
+      data-testid="action-request-assignment"
+      @click="emit('request-assignment')"
+      class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs transition-all hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <svg
+        class="h-3.5 w-3.5"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m1.586-9.414a2 2 0 112.828 2.828L12.828 15H10v-2.828l8.586-8.586z"
+        />
+      </svg>
+      <span>Request this ticket</span>
     </button>
 
     <button
