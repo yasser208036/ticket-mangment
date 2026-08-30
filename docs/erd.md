@@ -71,6 +71,18 @@ erDiagram
         json meta
         timestamp created_at "no updated_at -- append-only"
     }
+    ticket_assignment_requests {
+        bigint id PK
+        bigint ticket_id FK "cascadeOnDelete -- a request is transient, not an audit record"
+        bigint user_id FK "the requesting agent, cascadeOnDelete"
+        enum status "pending | approved | declined"
+        string note "nullable"
+        bigint decided_by FK "nullable, nullOnDelete"
+        timestamp decided_at "nullable"
+        string decision_note "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
     requesters ||--o{ tickets : requester_id
     categories ||--o{ tickets : category_id
     priorities ||--o{ tickets : priority_id
@@ -81,6 +93,8 @@ erDiagram
     users ||--o{ tickets : created_by
     users ||--o{ tickets : escalated_by
     tickets ||--o{ ticket_activities : ticket_id
+    tickets ||--o{ ticket_assignment_requests : ticket_id
+    users ||--o{ ticket_assignment_requests : user_id
 ```
 
 ## Table notes
@@ -96,6 +110,7 @@ erDiagram
 | `tickets` | Core soft-deleted record; foreign keys restrict except user references set null. | TM-21 |
 | `ticket_sequences` | One row per year backing ticket references. | TM-21 |
 | `ticket_activities` | Ticket audit trail: one row per event (`ticket_id`, `user_id` nullable, `event`, `field`, `old_value`, `new_value`, `meta` json, `created_at` only -- no `updated_at`). Never modified is enforced, not assumed: the model uses an append-only Eloquent builder that refuses every write but `insert` (TM-48), and `Ticket::forceDelete()` is refused because `ticket_id` is `ON DELETE CASCADE`. Changing that foreign key to `RESTRICT` is the complete fix and is recommended as its own story. | TM-45, TM-48 |
+| `ticket_assignment_requests` | An agent's ask to be assigned an unassigned ticket, reviewed by an admin. Both foreign keys cascade on delete -- unlike every other table here, a request is a transient intention, not a durable audit record; the durable record is the `assignment_requested`/`assignment_request_declined` activity rows, which survive because `ticket_activities.user_id` is `nullOnDelete`. | — |
 
 FULLTEXT index updates at commit; invisible inside open transaction. `innodb_ft_min_token_size = 3`.
 

@@ -104,6 +104,34 @@ never changes `status_id`. One call:
 See `docs/api-contract.md`'s `POST /tickets/{ticket}/escalate` section for the
 exact request/response shape and error field names.
 
+## Assignment requests
+
+An agent can no longer self-claim an unassigned ticket. Instead:
+
+1. `POST /tickets/{ticket}/assignment-requests` records a `pending` request
+   naming the agent, and writes an `assignment_requested` activity row. The
+   ticket must be unassigned, and an agent may hold only one pending request
+   per ticket — **two different agents may each have one pending on the same
+   ticket at once**.
+2. An admin reviews the queue (`GET /admin/assignment-requests`) and either:
+   - **Approves** it — the ticket is assigned to that agent through the same
+     writer `POST /tickets/{ticket}/assign` uses, so the trail's `assigned`
+     row is indistinguishable in shape from a direct assign
+     (`meta.reason: "assignment_request"`). Every other pending request on
+     that ticket is declined automatically, each writing its own
+     `assignment_request_declined` row.
+   - **Declines** it — the ticket is untouched, and one
+     `assignment_request_declined` row is written. No notification is sent
+     either way; an admin action, not an event, is what tells the agent.
+
+The only ways a ticket gains an assignee are, in total: `POST
+/tickets/{ticket}/assign` (admin-only), choosing an agent at creation time
+(`POST /tickets`, role `user` only), escalation's own reassignment, and an
+approved assignment request.
+
+See `docs/api-contract.md`'s assignment-request endpoints for exact
+request/response shapes and error field names.
+
 ## Activity logging
 
 Every mutation path writes to `ticket_activities` through `ActivityRecorder`,
@@ -116,7 +144,9 @@ the only writer the append-only builder permits. One sentence per event:
 | `deleted` | Soft-deleting a ticket (`DELETE /tickets/{ticket}`) |
 | `assigned` | Assigning to an agent (`POST /tickets/{ticket}/assign`), or escalation's own reassignment |
 | `unassigned` | Assigning `null` (`POST /tickets/{ticket}/assign`) |
-| `claimed` | An agent self-claiming an unassigned ticket (`POST /tickets/{ticket}/claim`) |
+| `claimed` | **Historical only** — self-claim was removed in favour of assignment requests; no live code path writes this event any more, but existing rows and the enum case remain |
+| `assignment_requested` | An agent asking for an unassigned ticket (`POST /tickets/{ticket}/assignment-requests`) |
+| `assignment_request_declined` | An admin declining a request, or a request auto-declined because another was approved for the same ticket |
 | `status_changed` | Any status move that is not into `reopened` (`POST /tickets/{ticket}/status`) |
 | `reopened` | A status move whose target is `reopened` — its own event, not `status_changed`, so the timeline reads plainly |
 | `category_changed` | A category deleted while holding tickets, once per reassigned ticket, soft-deleted tickets included |

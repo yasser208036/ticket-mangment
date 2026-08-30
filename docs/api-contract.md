@@ -25,7 +25,25 @@ agents receive `403` for every admin endpoint.
 `UserPolicy` defines `viewAny`, `view`, `create`, `update`, and `delete`.
 Admins may list, read, create, and edit users; users may read themselves;
 deletion is denied for everyone. `CategoryPolicy` and `TicketPolicy` authorize
-their own records. Every active staff member may list and create tickets.
+their own records.
+
+There are three roles: **Admin**, **Agent**, and **User**. Only a role `user`
+account may create a ticket (`POST /tickets`; `403` for admin and agent).
+`GET /tickets` and `GET /tickets/{ticket}` are scoped by role, not merely
+gated:
+
+| Role | Sees |
+|---|---|
+| Admin | Every ticket |
+| Agent | Tickets assigned to them, plus every unassigned ticket |
+| User | Only tickets they created |
+
+No query parameter widens this scope. A ticket outside the caller's scope is
+`403` on `GET /tickets/{ticket}` (or on any action against it), consistent
+with an unknown id being `404` only for a caller who could otherwise see it.
+An agent may update, change the status of, or escalate only a ticket assigned
+to them. `GET /api/v1/agents` returns active agents (`id`, `name` only) to
+every authenticated role, so a `user` account can name one at creation.
 
 ## Status workflow
 
@@ -89,14 +107,18 @@ escalation level.
 | `DELETE` | `/api/v1/categories/{category}` | Soft delete. Unguarded until TM-18. | admin bearer (CategoryPolicy) | TM-17 |
 | `GET` | `/api/v1/priorities` | Every priority, ordered by level. | bearer | TM-19 |
 | `GET` | `/api/v1/statuses` | Every status, ordered by sort order. | bearer | TM-19 |
-| `GET` | `/api/v1/tickets` | Paginated, filterable ticket queue. Omits `description`. | bearer (TicketPolicy) | TM-23, TM-24 |
-| `GET` | `/api/v1/tickets/stats` | Dashboard counts by status and priority; scoped to the caller unless admin. | bearer | TM-29 |
-| `POST` | `/api/v1/tickets` | File a ticket; requester matched or created by email. | bearer (TicketPolicy) | TM-22 |
+| `GET` | `/api/v1/agents` | Active agents, id and name only, for the create-ticket picker. | bearer | — |
+| `GET` | `/api/v1/tickets` | Paginated, filterable ticket queue, scoped by role. Omits `description`. | bearer (TicketPolicy) | TM-23, TM-24 |
+| `GET` | `/api/v1/tickets/stats` | Dashboard counts by status and priority; scoped by role. | bearer | TM-29 |
+| `POST` | `/api/v1/tickets` | File a ticket; role `user` only. Requester is derived from the caller. | bearer (TicketPolicy, `user` role) | TM-22 |
 | `GET` | `/api/v1/tickets/{ticket}` | Return one ticket and allowed actions. | bearer (TicketPolicy) | TM-26 |
 | `GET` | `/api/v1/tickets/{ticket}/activities` | Paginated audit trail for one ticket, newest first. | bearer (TicketPolicy `view`) | TM-46 |
 | `POST` | `/api/v1/tickets/{ticket}/notes` | Add an internal note as a `note_added` activity. | bearer (TicketPolicy `addNote`) | TM-47 |
 | `POST` | `/api/v1/tickets/{ticket}/assign` | Assign or unassign a ticket to an active agent. | admin bearer (TicketPolicy) | TM-31 |
-| `POST` | `/api/v1/tickets/{ticket}/claim` | Self-claim an unassigned ticket. | bearer, agent only (TicketPolicy) | TM-32 |
+| `POST` | `/api/v1/tickets/{ticket}/assignment-requests` | Ask to be assigned an unassigned ticket. | bearer, agent only (TicketPolicy) | — |
+| `GET` | `/api/v1/admin/assignment-requests` | Pending (or decided) assignment requests. | admin bearer | — |
+| `POST` | `/api/v1/admin/assignment-requests/{assignmentRequest}/approve` | Approve a request; assigns the ticket. | admin bearer | — |
+| `POST` | `/api/v1/admin/assignment-requests/{assignmentRequest}/decline` | Decline a request; ticket untouched. | admin bearer | — |
 | `POST` | `/api/v1/tickets/{ticket}/escalate` | Raise a ticket's escalation level, priority and visibility. | bearer (TicketPolicy) | TM-41 |
 | `POST` | `/api/v1/tickets/{ticket}/status` | Move a ticket to a legal next status. | bearer (TicketPolicy) | TM-38 |
 | `PATCH` | `/api/v1/tickets/{ticket}` | Edit subject, description, category, or priority. | bearer (TicketPolicy) | TM-27 |
@@ -110,6 +132,11 @@ escalation level.
 | `GET` | `/api/v1/admin/workload` | Open ticket counts per person, split by priority, with load bands. | admin bearer (middleware) | TM-35 |
 
 ### `GET /api/v1/tickets`
+
+Results are scoped by role before any filter is applied (`Ticket::scopeVisibleTo`):
+an admin sees every ticket, an agent sees tickets assigned to them plus every
+unassigned ticket, and a role `user` account sees only tickets they created.
+**No parameter widens this scope.**
 
 All parameters are optional and compose on one request. `status_id`,
 `priority_id`, and `category_id` accept one id or arrays. Array limits are 20,
@@ -141,29 +168,34 @@ When `q` is present and `sort` is omitted, results order by exact reference,
 FULLTEXT score, then newest. `sort=relevance` without `q` returns `422`.
 `direction` does not apply to relevance sorting.
 
-### `GET /api/v1/priorities` and `GET /api/v1/statuses`
+### `GET /api/v1/priorities`, `GET /api/v1/statuses` and `GET /api/v1/agents`
 
-Both identical in shape: bearer token required, any active staff member, no
-parameters. Return `{"data": [...]}`, unpaginated, in seeded display order
-(`Priority::ordered()`/`Status::ordered()` — level ascending / sort order
-ascending).
+`priorities` and `statuses` are identical in shape: bearer token required, any
+authenticated role, no parameters. Return `{"data": [...]}`, unpaginated, in
+seeded display order (`Priority::ordered()`/`Status::ordered()` — level
+ascending / sort order ascending).
 
 A priority row is `{id, name, slug, level, color, is_default}`. A status row is
 `{id, name, slug, bucket, color, is_default, is_terminal, sort_order}`. See
 `docs/ticket-lifecycle.md` for the seven seeded statuses and their legal
 transitions.
 
+`GET /api/v1/agents` returns active agents only, ordered by name then id, as
+`{"data": [{"id": 1, "name": "Alan Turing"}, ...]}` — deliberately **not** the
+full `UserResource` shape: no email, role, or `is_active`. Any authenticated
+role may call it; it exists so a role `user` account can name an agent when
+filing a ticket without being given `GET /admin/users`.
+
 ### `GET /api/v1/tickets/stats`
 
-Bearer token required, any active staff member. No parameters — the response is
-scoped by role rather than by query string: an admin sees every ticket, an
-agent sees only tickets assigned to them.
+Bearer token required, any authenticated role. No parameters — the response is
+scoped by role rather than by query string.
 
 Response shape, from `TicketStats::for()`:
 
 ```json
 {
-  "scope": "own",
+  "scope": "assigned",
   "total": 42,
   "unassigned": 5,
   "escalated": 3,
@@ -177,50 +209,58 @@ Response shape, from `TicketStats::for()`:
 }
 ```
 
-`scope` is `"own"` for an agent and `"all"` for an admin — it describes what
-`total`, `unassigned`, `escalated`, `by_status`, and `by_priority` are counted
-over. `mine_open` is always the **caller's own** open (non-terminal) count,
-regardless of `scope` — an admin viewing all-ticket totals still sees their own
-open count separately. `by_status` and `by_priority` are zero-filled: every
-seeded status and priority appears even with a count of 0, in seeded order.
+`scope` is `"all"` for an admin, `"assigned"` for an agent, `"authored"` for a
+role `user` account — it describes what `total`, `unassigned`, `escalated`,
+`by_status`, and `by_priority` are counted over, using the same scope as
+`GET /tickets`. `mine_open` is always the **caller's own** open (non-terminal)
+count, regardless of `scope` — an admin viewing all-ticket totals still sees
+their own open count separately. `by_status` and `by_priority` are
+zero-filled: every seeded status and priority appears even with a count of 0,
+in seeded order.
 
 ### `POST /api/v1/tickets`
 
-Requires a bearer token; any active staff member may file a ticket. Body:
+Requires a bearer token and role `user` — `403` for admin or agent. Body:
 
 ```json
 {
-  "requester": { "name": "<required>", "email": "<required>", "phone": "<optional>", "company": "<optional>" },
   "subject": "<required, max 255>",
   "description": "<required, max 16000>",
   "category_id": "<required, must be active and not soft-deleted>",
   "priority_id": "<optional, defaults to the default priority>",
-  "status_id": "<optional, defaults to the default status>"
+  "assigned_to": "<optional, must be an active agent>"
 }
 ```
 
-The requester is matched by email (`Requester::firstOrCreate`) — an existing
-requester's name/phone/company are **not** overwritten by a later submission
-under the same email. `reference`, `created_by`, and the `created` activity row
-are set by the server and cannot be supplied. `422` on a missing/invalid
-`category_id`, a soft-deleted or inactive category, or a missing
-`requester.email`. `201` with the full ticket detail shape (no `can` key — that
-field is present only on `GET /tickets/{ticket}`).
+No `requester` object — sending one is `422 requester.prohibited`. The
+requester is derived from the caller's own account and matched by email
+(`Requester::firstOrCreate`) — an existing requester's name/phone/company are
+**not** overwritten. `reference`, `created_by`, and the `created` activity row
+are set by the server and cannot be supplied. Supplying `assigned_to` also
+writes an `assigned` activity row and dispatches the assignment notification.
+`422` on a missing/invalid `category_id`, a soft-deleted or inactive category,
+or an `assigned_to` that is not an active agent. `201` with the full ticket
+detail shape (no `can` key — that field is present only on
+`GET /tickets/{ticket}`).
 
 ### `GET /api/v1/tickets/{ticket}`
 
-Requires a bearer token; any active staff member may view any ticket
-(`TicketPolicy::view` is unconditional). `404` for an unknown or soft-deleted
-id.
+Requires a bearer token; visibility follows the same role scope as
+`GET /tickets` (`TicketPolicy::view`) — an admin may view any ticket, an agent
+only one assigned to them or unassigned, a `user` account only one they
+created. `403` for a ticket outside the caller's scope, `404` for an unknown
+or soft-deleted id.
 
 `200` with the full `TicketResource` shape, which on this route only also
 includes:
 
 - `escalation_reason` — the free-text reason from the most recent escalation.
-- `can` — `{update, assign, claim, change_status, escalate, delete, add_note}`,
-  each a boolean computed from the caller's policies **and** the ticket's
-  current state (`claim` is `false` once assigned; `escalate` is `false` on a
-  terminal status).
+- `can` — `{update, assign, request_assignment, change_status, escalate,
+  delete, add_note}`, each a boolean computed from the caller's policies
+  **and** the ticket's current state (`request_assignment` is `false` once
+  assigned; `escalate` is `false` on a terminal status).
+- `my_pending_assignment_request` — `true` when the caller has a pending
+  assignment request on this ticket.
 - `allowed_transitions` — the status rows the caller may legally move this
   ticket to right now, role-filtered. See `docs/ticket-lifecycle.md`.
 - `resolution` — `{note, at, by}` or `null`; the current resolution note if the
@@ -265,31 +305,51 @@ details of that contract are load-bearing:
 `App\Events\TicketAssigned` **after the transaction commits**, and its listener
 emails the new assignee. **Unassigning dispatches nothing, and the previous
 assignee is never notified.** A no-op assignment dispatches nothing either, so a
-double submit cannot double-notify, and a self-assignment (including
-`/claim`) sends no email.
+double submit cannot double-notify.
 
-### `POST /api/v1/tickets/{ticket}/claim`
+### `POST /api/v1/tickets/{ticket}/assignment-requests`
 
-**Agent-only bearer token** — `403` for an admin (`TicketPolicy::claim`). No
-request body.
+**Agent-only bearer token** — `403` for an admin or an end user
+(`TicketPolicy::requestAssignment`). Optional body: `note` (string, max 500).
 
-`200` with the ticket assigned to the caller on success, writing one `claimed`
-activity row. Claiming a ticket the caller already holds is also `200` and
-writes nothing. On conflict, **two distinct `409` shapes**:
+`201` with the created request (`status: "pending"`) and one
+`assignment_requested` activity row carrying the note. `422` under
+`errors.ticket` when the ticket already has an assignee, or when the same
+agent already has a pending request on it — **two different agents may each
+have a pending request on the same ticket at once**; the admin queue decides
+between them. There is no self-claim endpoint any more: `POST
+/tickets/{ticket}/claim` is `404`.
 
-- Someone else already holds it: `{"message": "<name> already claimed this
-  ticket.", "assignee": {"id": <id>, "name": "<name>"}}`.
-- The ticket was unassigned again between the caller's read and their claim
-  attempt (a lost race with no winner to name):
-  `{"message": "This ticket's assignment changed while you were claiming it.
-  Reload and try again."}`.
+### `GET /api/v1/admin/assignment-requests`
+
+Admin-only. `?status=` filters (`pending` default, or `approved` /
+`declined`); paginated, oldest first. Each row embeds the ticket, the
+requesting agent, and — once decided — who decided it and when.
+
+### `POST /api/v1/admin/assignment-requests/{assignmentRequest}/approve`
+
+Admin-only, no body. Assigns the ticket to the requesting agent through the
+same writer `POST /tickets/{ticket}/assign` uses, so the trail gets an
+ordinary `assigned` activity row (`meta.reason: "assignment_request"`) and the
+assignee is notified exactly as a direct assignment would. Every other
+pending request on that ticket is declined automatically, each with its own
+`assignment_request_declined` row.
+
+`422` when: the request was already decided; the ticket gained an assignee in
+the meantime; or the requesting agent is no longer an active agent.
+
+### `POST /api/v1/admin/assignment-requests/{assignmentRequest}/decline`
+
+Admin-only. Optional body: `note` (string, max 500), stored as
+`decision_note`. Records a `assignment_request_declined` activity row and
+leaves the ticket untouched — no notification is sent.
 
 ### `PATCH /api/v1/tickets/{ticket}`
 
-Requires a bearer token; open to any active staff member
-(`TicketPolicy::update`). Body: `subject`, `description`, `category_id`,
-`priority_id` — all `sometimes`, so a partial body only changes the fields it
-names.
+Requires a bearer token; an admin may edit any ticket, an agent only one
+assigned to them (`TicketPolicy::update`). Body: `subject`, `description`,
+`category_id`, `priority_id` — all `sometimes`, so a partial body only changes
+the fields it names.
 
 Every other field is `prohibited` and returns `422` if present, including
 `status_id`, `assigned_to`, `requester_id`, `reference`, `created_by`,
@@ -331,9 +391,9 @@ assignment moved, one `assigned` row in the same shape the assign endpoint uses,
 so assignment history stays findable by `field = 'assigned_to'`.
 
 A **terminal** ticket returns `422` under `errors.status` — not `403`;
-`TicketPolicy::escalate` is a pure role gate and the state check lives in the
-handler, while `can.escalate` on the detail response folds both together so the
-UI hides the control. A missing or too-short `reason` returns `422` under
+`TicketPolicy::escalate` (admin, or an agent who holds the ticket) is a pure
+role gate and the state check lives in the handler, while `can.escalate` on
+the detail response folds both together so the UI hides the control. A missing or too-short `reason` returns `422` under
 `errors.reason`; a `priority_id` or `assigned_to` in the body returns `422`. If
 no active administrator exists the escalation is refused with `422` under
 `errors.assigned_to` and nothing is written.
@@ -463,9 +523,11 @@ this story.
 
 ### `POST /api/v1/tickets/{ticket}/notes`
 
-Requires `Authorization: Bearer <token>`. Any active staff user may note any
-ticket, **including a Resolved or Closed one** -- `TicketPolicy::addNote`
-deliberately carries no terminal guard, because a post-mortem note is the point.
+Requires `Authorization: Bearer <token>`. Any staff member (admin or agent)
+who can see the ticket may note it, **including a Resolved or Closed one** --
+`TicketPolicy::addNote` deliberately carries no terminal guard, because a
+post-mortem note is the point. A `user` account never notes — the trail stays
+internal.
 Body: `{ "body": "..." }`, required, 3 to 5000 characters. Whitespace-only is
 trimmed to null by global middleware and returns `422 required`.
 
@@ -524,8 +586,10 @@ an active agent (TM-31).
 
 ### `POST /api/v1/tickets/{ticket}/status`
 
-Requires a bearer token; `TicketPolicy::changeStatus` admits every staff member,
-so the role rules live in `status_transitions`, not in the route. Body is
+Requires a bearer token; an admin may move any ticket, an agent only one
+assigned to them (`TicketPolicy::changeStatus`, same predicate as `update`) —
+beyond that, the role rules live in `status_transitions`, not in the route.
+Body is
 `{"status_id": <int>, "resolution"?: "<string>", "reason"?: "<string>"}`.
 
 `resolution` is `required|min:10|max:5000` when `status_id` targets **Resolved**
