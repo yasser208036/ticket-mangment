@@ -1,11 +1,10 @@
 @import 'tailwindcss';
 
 /*
- * Design tokens. Every colour the UI paints comes from here, so a restyle is
- * a change to this block rather than a sweep through thirty templates. The
- * ramps are deliberately warm-neutral: the status/priority/category colours
- * are chosen by admins and stored in the database, and a cool slate chrome
- * fought with the warmer ones among them.
+ * Design tokens, matching the "Deskflow Redesign" mockup from claude.ai/design
+ * (project f6760546). Every colour the UI paints comes from here, so a
+ * restyle is a change to this block rather than a sweep through thirty
+ * templates.
  */
 @theme {
   --font-sans:
@@ -14,38 +13,43 @@
   --font-mono:
     ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
-  /* Neutral ink ramp — chrome, borders, text. */
-  --color-ink-50: #f7f7f8;
-  --color-ink-100: #efeff1;
-  --color-ink-200: #e4e4e7;
-  --color-ink-300: #d1d1d6;
-  --color-ink-400: #a0a0ab;
-  --color-ink-500: #74747f;
-  --color-ink-600: #55555f;
-  --color-ink-700: #3f3f47;
-  --color-ink-800: #2a2a30;
-  --color-ink-900: #18181b;
+  /* Neutral ink ramp — chrome, borders, text. Tailwind's slate scale, the
+   * palette the mockup's own hex values match exactly. */
+  --color-ink-50: #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
 
-  /* Brand iris — links, active nav, focus, selected state. One accent only. */
-  --color-brand-50: #f1f0fd;
-  --color-brand-100: #e5e2fb;
-  --color-brand-200: #cdc8f7;
-  --color-brand-300: #aca3f0;
-  --color-brand-400: #8b80e8;
-  --color-brand-500: #7163dd;
-  --color-brand-600: #5b4bd0;
-  --color-brand-700: #4b3cb2;
-  --color-brand-800: #3e3391;
-  --color-brand-900: #352d75;
+  /* Brand — links, active nav, focus, selected state, the indigo→violet
+   * gradient on primary actions and the logo mark. Indigo's own scale. */
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+  /* Gradient's far stop — violet, paired with brand-600 on primary buttons
+   * and the logo mark. */
+  --color-accent-600: #7c3aed;
 
   /* Surfaces. */
-  --color-canvas: #f7f7f8;
+  --color-canvas: #f8fafc;
   --color-surface: #ffffff;
-  --color-sunken: #fafafb;
-  --color-line: #e7e7ea;
-  --color-line-strong: #d6d6db;
+  --color-sunken: #f8fafc;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
 
-  --radius-card: 0.75rem;
+  --radius-card: 1.125rem;
 }
 
 :root {
@@ -60,7 +64,11 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: var(--color-canvas);
+  background: radial-gradient(
+    circle at 50% 0%,
+    rgba(241, 245, 249, 0.8) 0%,
+    rgba(248, 250, 252, 1) 100%
+  );
   color: var(--color-ink-900);
 }
 
@@ -116,7 +124,7 @@ select {
 
 /* --- Surfaces ------------------------------------------------------- */
 @utility ui-card {
-  @apply rounded-card border border-line bg-surface;
+  @apply rounded-card border border-line bg-surface shadow-xs;
 }
 
 @utility ui-card-pad {
@@ -176,11 +184,11 @@ select {
   @apply ui-focus inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-[background-color,border-color,color,opacity] disabled:pointer-events-none disabled:opacity-50;
 }
 
-/* Solid ink rather than a brand gradient: the accent stays reserved for
- * navigation and selection, so the one primary action on a screen is the
- * darkest thing on it and needs no colour to win. */
+/* The one gradient in the app: reserved for the primary action and the logo
+ * mark, so it always points at the same thing -- "this is the brand" or
+ * "this is the button to press". */
 @utility ui-btn-primary {
-  @apply bg-ink-900 text-white hover:bg-ink-800;
+  @apply bg-gradient-to-r from-brand-600 to-accent-600 text-white shadow-sm shadow-brand-600/25 hover:opacity-95;
 }
 
 @utility ui-btn-secondary {

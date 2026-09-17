@@ -38,7 +38,7 @@ async function submit(): Promise<void> {
     <section class="w-full max-w-sm">
       <div class="mb-7 flex flex-col items-center text-center">
         <span
-          class="flex h-10 w-10 items-center justify-center rounded-xl bg-ink-900 text-white"
+          class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-600 to-accent-600 text-white shadow-md shadow-brand-600/25"
         >
           <UiIcon name="bolt" class="h-5 w-5" :stroke-width="2" />
         </span>

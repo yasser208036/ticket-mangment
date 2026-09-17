@@ -7,12 +7,12 @@ import {
   activitySentence,
   noteBody,
 } from '../lib/activityProse'
-import { tintedBadge } from '../lib/color'
+import { solidBadge } from '../lib/color'
 import { relativeAge } from '../lib/relativeTime'
 
 const props = defineProps<{ activity: TicketActivity }>()
 const descriptor = computed(() => eventDescriptor(props.activity.event))
-const marker = computed(() => tintedBadge(descriptor.value.color))
+const marker = computed(() => solidBadge(descriptor.value.color))
 const isSystem = computed(() => props.activity.actor === null)
 const body = computed(() => noteBody(props.activity))
 </script>
@@ -25,7 +25,7 @@ const body = computed(() => noteBody(props.activity))
     :data-system="isSystem ? 'true' : undefined"
   >
     <span
-      class="z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-surface"
+      class="z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full shadow-xs"
       data-testid="timeline-icon"
       :style="marker"
       aria-hidden="true"

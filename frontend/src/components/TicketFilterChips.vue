@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { tintedBadge } from '../lib/color'
+import { solidBadge } from '../lib/color'
 import UiIcon from './ui/UiIcon.vue'
 
 /**
@@ -30,13 +30,13 @@ defineEmits<{ toggle: [id: number] }>()
         v-for="option in options"
         :key="option.id"
         type="button"
-        class="ui-focus inline-flex select-none items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors"
+        class="ui-focus inline-flex select-none items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors"
         :class="
           selected.includes(option.id)
-            ? ''
+            ? 'border-transparent'
             : 'border-line-strong bg-surface text-ink-600 hover:bg-ink-50 hover:text-ink-900'
         "
-        :style="selected.includes(option.id) ? tintedBadge(option.color) : {}"
+        :style="selected.includes(option.id) ? solidBadge(option.color) : {}"
         :aria-pressed="selected.includes(option.id)"
         @click="$emit('toggle', option.id)"
       >

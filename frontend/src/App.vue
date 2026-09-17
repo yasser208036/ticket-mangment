@@ -93,7 +93,7 @@ async function signOut(): Promise<void> {
             class="ui-focus flex shrink-0 items-center gap-2 rounded-md text-[15px] font-semibold tracking-tight text-ink-900"
           >
             <span
-              class="flex h-7 w-7 items-center justify-center rounded-lg bg-ink-900 text-white"
+              class="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-accent-600 text-white shadow-sm shadow-brand-600/25"
             >
               <UiIcon name="bolt" class="h-4 w-4" :stroke-width="2" />
             </span>

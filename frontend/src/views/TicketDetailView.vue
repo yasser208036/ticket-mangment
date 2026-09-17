@@ -234,7 +234,9 @@ async function onDeleted(): Promise<void> {
         </p>
         <p class="mt-0.5 whitespace-pre-wrap">
           {{ store.current.escalation_reason }}
-          {{ store.current.escalated_by?.name }}
+          <template v-if="store.current.escalated_by">
+            Escalated by {{ store.current.escalated_by.name }}.
+          </template>
         </p>
       </UiAlert>
 
