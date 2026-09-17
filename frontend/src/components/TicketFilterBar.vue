@@ -4,7 +4,7 @@ import { useAuthStore } from '../stores/auth'
 import { useMasterDataStore } from '../stores/masterData'
 import { useTicketsStore } from '../stores/tickets'
 import { useUsersStore } from '../stores/users'
-import { readableTextColor } from '../lib/color'
+import { getBadgeTheme } from '../lib/color'
 import type { TicketDirection, TicketSort } from '../api/tickets'
 
 const auth = useAuthStore()
@@ -55,11 +55,6 @@ function toggleFilter(arr: number[], id: number): void {
     arr.splice(idx, 1)
   }
   apply()
-}
-
-/** Convenience wrapper so the template can call it without explicit import */
-function getTextColor(hex: string): string {
-  return readableTextColor(hex)
 }
 
 onMounted(() => {
@@ -122,15 +117,16 @@ onMounted(() => {
               class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all select-none"
               :class="
                 tickets.statusIds.includes(status.id)
-                  ? 'border-transparent shadow-sm ring-2 ring-offset-1'
+                  ? 'shadow-2xs ring-2 ring-offset-1'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
               "
               :style="
                 tickets.statusIds.includes(status.id)
                   ? {
-                      backgroundColor: status.color,
-                      color: getTextColor(status.color),
-                      '--tw-ring-color': status.color + '55',
+                      backgroundColor: getBadgeTheme(status.color).bg,
+                      color: getBadgeTheme(status.color).text,
+                      borderColor: getBadgeTheme(status.color).border,
+                      '--tw-ring-color': status.color + '40',
                     }
                   : {}
               "
@@ -138,9 +134,10 @@ onMounted(() => {
               <span
                 class="h-1.5 w-1.5 shrink-0 rounded-full"
                 :style="{
-                  backgroundColor: tickets.statusIds.includes(status.id)
-                    ? getTextColor(status.color)
-                    : status.color,
+                  backgroundColor: status.color,
+                  boxShadow: tickets.statusIds.includes(status.id)
+                    ? `0 0 0 2px ${getBadgeTheme(status.color).glow}`
+                    : 'none',
                 }"
               />
               {{ status.name }}
@@ -164,15 +161,16 @@ onMounted(() => {
               class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all select-none"
               :class="
                 tickets.priorityIds.includes(priority.id)
-                  ? 'border-transparent shadow-sm ring-2 ring-offset-1'
+                  ? 'shadow-2xs ring-2 ring-offset-1'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
               "
               :style="
                 tickets.priorityIds.includes(priority.id)
                   ? {
-                      backgroundColor: priority.color,
-                      color: getTextColor(priority.color),
-                      '--tw-ring-color': priority.color + '55',
+                      backgroundColor: getBadgeTheme(priority.color).bg,
+                      color: getBadgeTheme(priority.color).text,
+                      borderColor: getBadgeTheme(priority.color).border,
+                      '--tw-ring-color': priority.color + '40',
                     }
                   : {}
               "
@@ -180,9 +178,10 @@ onMounted(() => {
               <span
                 class="h-1.5 w-1.5 shrink-0 rounded-full"
                 :style="{
-                  backgroundColor: tickets.priorityIds.includes(priority.id)
-                    ? getTextColor(priority.color)
-                    : priority.color,
+                  backgroundColor: priority.color,
+                  boxShadow: tickets.priorityIds.includes(priority.id)
+                    ? `0 0 0 2px ${getBadgeTheme(priority.color).glow}`
+                    : 'none',
                 }"
               />
               {{ priority.name }}
@@ -203,22 +202,29 @@ onMounted(() => {
               type="button"
               @click="toggleFilter(tickets.categoryIds, category.id)"
               :aria-pressed="tickets.categoryIds.includes(category.id)"
-              class="inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium tracking-tight transition-all select-none"
+              class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium tracking-tight transition-all select-none"
               :class="
                 tickets.categoryIds.includes(category.id)
-                  ? 'border-transparent shadow-sm ring-2 ring-offset-1'
+                  ? 'shadow-2xs ring-2 ring-offset-1'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
               "
               :style="
                 tickets.categoryIds.includes(category.id)
                   ? {
-                      backgroundColor: category.color,
-                      color: getTextColor(category.color),
-                      '--tw-ring-color': category.color + '55',
+                      backgroundColor: getBadgeTheme(category.color).bg,
+                      color: getBadgeTheme(category.color).text,
+                      borderColor: getBadgeTheme(category.color).border,
+                      '--tw-ring-color': category.color + '40',
                     }
                   : {}
               "
             >
+              <span
+                class="h-1.5 w-1.5 shrink-0 rounded-xs"
+                :style="{
+                  backgroundColor: category.color,
+                }"
+              />
               {{ category.name }}
             </button>
           </div>
