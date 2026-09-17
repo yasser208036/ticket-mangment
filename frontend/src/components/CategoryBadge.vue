@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { readableTextColor } from '../lib/color'
+import { tintedBadge } from '../lib/color'
 import type { Category } from '../api/categories'
 const props = defineProps<{
   category: Pick<Category, 'name' | 'color' | 'is_active'>
 }>()
-const textColor = computed(() => readableTextColor(props.category.color))
+const style = computed(() => tintedBadge(props.category.color))
 </script>
 <template>
   <span
-    class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium tracking-tight shadow-xs transition-opacity"
-    :class="{ 'opacity-55 saturate-50': !category.is_active }"
+    class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium"
+    :class="{ 'opacity-60 saturate-50': !category.is_active }"
     data-testid="category-badge"
-    :style="{ backgroundColor: category.color, color: textColor }"
+    :style="style"
     :data-inactive="category.is_active ? undefined : 'true'"
   >
+    <span
+      class="h-1.5 w-1.5 shrink-0 rounded-full"
+      :style="{ backgroundColor: category.color }"
+    />
     {{ category.name }}
   </span>
 </template>

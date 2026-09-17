@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import UiButton from './ui/UiButton.vue'
 import { errorMessage, validationErrors } from '../api/errors'
 import { useTicketsStore } from '../stores/tickets'
 
@@ -26,48 +27,40 @@ async function submit(): Promise<void> {
 
 <template>
   <form
-    class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm space-y-3"
+    class="ui-card ui-card-pad space-y-3"
     data-testid="note-composer"
     @submit.prevent="submit"
   >
-    <label
-      for="note-body"
-      class="text-xs font-bold uppercase tracking-wider text-slate-400"
-    >
-      Internal note
-    </label>
+    <label for="note-body" class="ui-section-title block">Internal note</label>
     <textarea
       id="note-body"
       v-model="body"
       data-testid="note-body"
       rows="3"
       maxlength="5000"
-      class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 shadow-xs focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+      placeholder="Record what you did, or what the requester said…"
+      class="ui-input resize-y"
+      :class="fieldError && 'ui-input-invalid'"
+      aria-describedby="note-hint"
     />
-    <p class="text-xs italic text-slate-400" data-testid="note-hint">
-      Notes are internal and permanent.
-    </p>
-    <p
-      v-if="fieldError"
-      class="text-xs font-medium text-rose-600"
-      data-testid="note-error-body"
-    >
+    <p v-if="fieldError" class="ui-error-text" data-testid="note-error-body">
       {{ fieldError }}
     </p>
-    <p
-      v-if="message"
-      class="text-xs font-medium text-rose-600"
-      data-testid="note-error"
-    >
+    <p v-if="message" class="ui-error-text" data-testid="note-error">
       {{ message }}
     </p>
-    <button
-      type="submit"
-      data-testid="note-submit"
-      :disabled="store.noteSaving"
-      class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      {{ store.noteSaving ? 'Saving...' : 'Add note' }}
-    </button>
+    <div class="flex items-center justify-between gap-3">
+      <p id="note-hint" class="ui-hint" data-testid="note-hint">
+        Notes are internal and permanent.
+      </p>
+      <UiButton
+        variant="primary"
+        type="submit"
+        data-testid="note-submit"
+        :loading="store.noteSaving"
+      >
+        {{ store.noteSaving ? 'Saving…' : 'Add note' }}
+      </UiButton>
+    </div>
   </form>
 </template>

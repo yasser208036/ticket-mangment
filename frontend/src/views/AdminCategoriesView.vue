@@ -2,14 +2,21 @@
 import { onMounted, ref, watch } from 'vue'
 import CategoryBadge from '../components/CategoryBadge.vue'
 import CategoryFormDialog from '../components/CategoryFormDialog.vue'
+import UiAlert from '../components/ui/UiAlert.vue'
+import UiButton from '../components/ui/UiButton.vue'
+import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import UiLoadingPanel from '../components/ui/UiLoadingPanel.vue'
+import UiPageHeader from '../components/ui/UiPageHeader.vue'
 import { useCategoriesStore } from '../stores/categories'
 import type { Category } from '../api/categories'
 import { deleteBlockedBy } from '../api/categories'
 import { errorMessage } from '../api/errors'
 import CategoryDeleteDialog from '../components/CategoryDeleteDialog.vue'
+import BaseDialog from '../components/BaseDialog.vue'
 const store = useCategoriesStore()
 const editing = ref<Category>()
 const open = ref(false)
+const confirming = ref<Category>()
 const blocking = ref<{
   category: Category
   message: string
@@ -29,8 +36,16 @@ function create() {
   editing.value = undefined
   open.value = true
 }
-async function remove(c: Category) {
-  if (!window.confirm('Delete category?')) return
+// Two steps, and neither of them `window.confirm`: the blocked case already
+// opens a real dialog to pick a destination category, and a native prompt in
+// front of it made the same action look like two different features.
+function remove(c: Category) {
+  confirming.value = c
+}
+async function confirmRemove() {
+  const c = confirming.value
+  if (!c) return
+  confirming.value = undefined
   try {
     await store.remove(c.id)
   } catch (reason) {
@@ -40,176 +55,113 @@ async function remove(c: Category) {
   }
 }
 </script>
-<template>
-  <main class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
-    <!-- Header -->
-    <div
-      class="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"
-    >
-      <div>
-        <h1
-          class="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl"
-        >
-          Categories
-        </h1>
-        <p class="mt-1 text-sm text-slate-500">
-          Manage ticket categories, routing tags, and display priority order.
-        </p>
-      </div>
 
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-2">
-          <label class="text-xs font-semibold text-slate-500">Status:</label>
+<template>
+  <main class="mx-auto max-w-7xl space-y-5 px-4 py-7 sm:px-6 lg:px-8">
+    <UiPageHeader
+      title="Categories"
+      description="Ticket categories, routing tags and display order."
+    >
+      <template #actions>
+        <label class="flex items-center gap-1.5 text-xs text-ink-500">
+          Status
           <select
             v-model="store.status"
             data-testid="categories-status"
-            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            class="ui-select w-auto py-1.5 text-xs"
           >
-            <option value="">All statuses</option>
+            <option value="">All</option>
             <option value="active">Active only</option>
             <option value="inactive">Inactive only</option>
           </select>
-        </div>
-
-        <button
+        </label>
+        <UiButton
+          variant="primary"
+          icon="plus"
           data-testid="categories-new"
           @click="create"
-          class="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition-all hover:bg-indigo-700 active:scale-95"
         >
-          <svg
-            class="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            stroke-width="2.5"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-          <span>New category</span>
-        </button>
-      </div>
-    </div>
+          New category
+        </UiButton>
+      </template>
+    </UiPageHeader>
 
-    <!-- Loading State -->
-    <div
-      v-if="store.loading"
-      data-testid="categories-loading"
-      class="flex items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-12 shadow-sm"
-    >
-      <div class="flex items-center gap-3 text-sm font-medium text-slate-500">
-        <svg
-          class="h-5 w-5 animate-spin text-indigo-600"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            class="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            stroke-width="4"
-          />
-          <path
-            class="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8v8H4z"
-          />
-        </svg>
-        <span>Loading categories...</span>
-      </div>
-    </div>
-
-    <!-- Error State -->
-    <div
-      v-if="store.error"
-      data-testid="categories-error"
-      class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 shadow-sm"
-    >
+    <UiAlert v-if="store.error" data-testid="categories-error">
       {{ store.error }}
-    </div>
+    </UiAlert>
 
-    <!-- Table -->
-    <div
-      v-if="!store.loading && store.categories.length"
-      class="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm"
-    >
+    <UiLoadingPanel
+      v-if="store.loading"
+      label="Loading categories"
+      testid="categories-loading"
+    />
+
+    <div v-else-if="store.categories.length" class="ui-card overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm" data-testid="categories-table">
-          <thead
-            class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold uppercase tracking-wider text-slate-500"
-          >
+        <table class="ui-table" data-testid="categories-table">
+          <thead class="ui-thead">
             <tr>
-              <th scope="col" class="py-3.5 pl-6 pr-3">Category</th>
-              <th scope="col" class="px-3 py-3.5">Slug</th>
-              <th scope="col" class="px-3 py-3.5">Description</th>
-              <th scope="col" class="px-3 py-3.5">Sort Order</th>
-              <th scope="col" class="py-3.5 pl-3 pr-6 text-right">Actions</th>
+              <th scope="col" class="ui-th">Category</th>
+              <th scope="col" class="ui-th">Slug</th>
+              <th scope="col" class="ui-th">Description</th>
+              <th scope="col" class="ui-th">Sort order</th>
+              <th scope="col" class="ui-th text-right">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-100 bg-white">
+          <tbody class="ui-tbody">
             <tr
               v-for="c in store.categories"
               :key="c.id"
               data-testid="categories-row"
-              class="transition-colors hover:bg-slate-50/70"
+              class="ui-tr"
             >
-              <td class="whitespace-nowrap py-4 pl-6 pr-3">
+              <td class="ui-td whitespace-nowrap">
                 <CategoryBadge :category="c" />
               </td>
               <td
-                class="whitespace-nowrap px-3 py-4 font-mono text-xs text-slate-500"
+                class="ui-td whitespace-nowrap font-mono text-xs text-ink-500"
               >
                 {{ c.slug }}
               </td>
-              <td class="max-w-xs truncate px-3 py-4 text-xs text-slate-600">
+              <td class="ui-td max-w-xs truncate text-xs text-ink-600">
                 {{ c.description || '—' }}
               </td>
-              <td class="whitespace-nowrap px-3 py-4">
+              <td class="ui-td whitespace-nowrap">
                 <input
                   type="number"
                   :value="c.sort_order"
+                  :aria-label="`Sort order for ${c.name}`"
+                  class="ui-input tabular w-20 py-1 text-xs"
                   @change="
                     store.saveSortOrder(
                       c,
                       Number(($event.target as HTMLInputElement).value),
                     )
                   "
-                  class="w-20 rounded-lg border border-slate-200 bg-slate-50/50 px-2.5 py-1 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 focus:bg-white"
                 />
               </td>
-              <td class="whitespace-nowrap py-4 pl-3 pr-6 text-right">
-                <div class="inline-flex items-center gap-1.5">
-                  <button
+              <td class="ui-td whitespace-nowrap text-right">
+                <span class="inline-flex items-center gap-1">
+                  <UiButton
+                    size="sm"
+                    variant="ghost"
                     data-testid="categories-toggle"
                     @click="store.setActive(c, !c.is_active)"
-                    class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
-                    :class="
-                      c.is_active
-                        ? 'text-amber-700 hover:bg-amber-50'
-                        : 'text-emerald-700 hover:bg-emerald-50'
-                    "
                   >
                     {{ c.is_active ? 'Deactivate' : 'Activate' }}
-                  </button>
-                  <button
-                    @click="edit(c)"
-                    class="rounded-lg px-2.5 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 transition-colors"
-                  >
+                  </UiButton>
+                  <UiButton size="sm" variant="ghost" @click="edit(c)">
                     Edit
-                  </button>
-                  <button
+                  </UiButton>
+                  <UiButton
+                    size="sm"
+                    variant="danger-quiet"
                     data-testid="categories-delete"
                     @click="remove(c)"
-                    class="rounded-lg px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors"
                   >
                     Delete
-                  </button>
-                </div>
+                  </UiButton>
+                </span>
               </td>
             </tr>
           </tbody>
@@ -217,38 +169,14 @@ async function remove(c: Category) {
       </div>
     </div>
 
-    <!-- Empty State -->
-    <div
-      v-if="!store.loading && !store.categories.length"
-      data-testid="categories-empty"
-      class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center shadow-xs"
-    >
-      <div
-        class="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-400"
-      >
-        <svg
-          class="h-6 w-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="1.8"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-          />
-        </svg>
-      </div>
-      <p class="mt-4 text-base font-bold text-slate-900">
-        No categories found.
-      </p>
-      <p class="mt-1 text-xs text-slate-500">
-        Create categories to organize and route incoming tickets.
-      </p>
-    </div>
+    <UiEmptyState
+      v-else
+      icon="tag"
+      title="No categories found."
+      description="Create categories to organise and route incoming tickets."
+      testid="categories-empty"
+    />
 
-    <!-- Dialogs -->
     <CategoryFormDialog
       v-if="open"
       :category="editing"
@@ -261,5 +189,33 @@ async function remove(c: Category) {
       :blocked="blocking"
       @close="blocking = undefined"
     />
+    <BaseDialog
+      v-if="confirming"
+      testid="categories-confirm-delete"
+      title="Delete category"
+      icon="trash"
+      tone="danger"
+      @close="confirming = undefined"
+    >
+      <p class="text-sm text-ink-600">
+        Delete “{{ confirming.name }}”? Tickets already filed under it keep it
+        until you reassign them.
+      </p>
+      <template #footer>
+        <UiButton
+          data-testid="categories-confirm-cancel"
+          @click="confirming = undefined"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="danger"
+          data-testid="categories-confirm-delete-confirm"
+          @click="confirmRemove"
+        >
+          Delete
+        </UiButton>
+      </template>
+    </BaseDialog>
   </main>
 </template>

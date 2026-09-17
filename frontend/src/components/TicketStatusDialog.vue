@@ -5,6 +5,9 @@ import { REOPENED_SLUG, RESOLVED_SLUG } from '../api/statuses'
 import type { TicketDetail } from '../api/tickets'
 import { useTicketsStore } from '../stores/tickets'
 import BaseDialog from './BaseDialog.vue'
+import UiAlert from './ui/UiAlert.vue'
+import UiButton from './ui/UiButton.vue'
+import UiField from './ui/UiField.vue'
 
 const props = defineProps<{ ticket: TicketDetail }>()
 const emit = defineEmits<{ changed: []; close: [] }>()
@@ -60,118 +63,89 @@ async function confirm(): Promise<void> {
 </script>
 
 <template>
-  <BaseDialog testid="ticket-status-dialog">
-    <div class="space-y-4">
-      <h3 class="text-base font-bold text-slate-900">Change status</h3>
-
-      <div v-if="ticket.allowed_transitions.length" class="space-y-1.5">
-        <label class="text-xs font-semibold text-slate-700">New status</label>
-        <select
-          v-model.number="selected"
-          data-testid="ticket-status-select"
-          class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-        >
-          <option :value="undefined" disabled>Select a status</option>
-          <option
-            v-for="status in ticket.allowed_transitions"
-            :key="status.id"
-            :value="status.id"
-          >
-            {{ status.name }}
-          </option>
-        </select>
-      </div>
-      <p
-        v-else
-        data-testid="ticket-status-empty"
-        class="text-sm text-slate-500"
+  <BaseDialog
+    testid="ticket-status-dialog"
+    title="Change status"
+    icon="refresh"
+    @close="emit('close')"
+  >
+    <UiField
+      v-if="ticket.allowed_transitions.length"
+      v-slot="field"
+      label="New status"
+    >
+      <select
+        v-bind="field"
+        v-model.number="selected"
+        data-testid="ticket-status-select"
       >
-        No status changes are available from here.
-      </p>
+        <option :value="undefined" disabled>Select a status</option>
+        <option
+          v-for="status in ticket.allowed_transitions"
+          :key="status.id"
+          :value="status.id"
+        >
+          {{ status.name }}
+        </option>
+      </select>
+    </UiField>
+    <p v-else data-testid="ticket-status-empty" class="text-sm text-ink-500">
+      No status changes are available from here.
+    </p>
 
-      <div v-if="needsResolution" class="space-y-1.5">
-        <label class="text-xs font-semibold text-slate-700">Resolution</label>
-        <textarea
-          v-model="resolution"
-          data-testid="ticket-status-resolution"
-          rows="3"
-          placeholder="How was this resolved?"
-          class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-        />
-        <p
-          v-if="noteTooShort"
-          data-testid="ticket-status-resolution-hint"
-          class="text-xs text-slate-500"
-        >
-          At least 10 characters.
-        </p>
-        <p
-          v-if="errors.resolution"
-          data-testid="ticket-status-resolution-error"
-          class="text-xs font-medium text-rose-600"
-        >
-          {{ errors.resolution[0] }}
-        </p>
-      </div>
+    <UiField
+      v-if="needsResolution"
+      v-slot="field"
+      label="Resolution"
+      :hint="noteTooShort ? 'At least 10 characters.' : undefined"
+      hint-testid="ticket-status-resolution-hint"
+      :error="errors.resolution"
+      error-testid="ticket-status-resolution-error"
+    >
+      <textarea
+        v-bind="field"
+        v-model="resolution"
+        data-testid="ticket-status-resolution"
+        rows="3"
+        placeholder="How was this resolved?"
+      />
+    </UiField>
 
-      <div v-if="needsReason" class="space-y-1.5">
-        <label class="text-xs font-semibold text-slate-700">Reason</label>
-        <textarea
-          v-model="reason"
-          data-testid="ticket-status-reason"
-          rows="3"
-          placeholder="What brought this ticket back?"
-          class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-        />
-        <p
-          v-if="reasonTooShort"
-          data-testid="ticket-status-reason-hint"
-          class="text-xs text-slate-500"
-        >
-          At least 10 characters.
-        </p>
-        <p
-          v-if="errors.reason"
-          data-testid="ticket-status-reason-error"
-          class="text-xs font-medium text-rose-600"
-        >
-          {{ errors.reason[0] }}
-        </p>
-      </div>
+    <UiField
+      v-if="needsReason"
+      v-slot="field"
+      label="Reason"
+      :hint="reasonTooShort ? 'At least 10 characters.' : undefined"
+      hint-testid="ticket-status-reason-hint"
+      :error="errors.reason"
+      error-testid="ticket-status-reason-error"
+    >
+      <textarea
+        v-bind="field"
+        v-model="reason"
+        data-testid="ticket-status-reason"
+        rows="3"
+        placeholder="What brought this ticket back?"
+      />
+    </UiField>
 
-      <p
-        v-if="error || errors.status_id"
-        data-testid="ticket-status-error"
-        class="rounded-lg bg-rose-50 p-2.5 text-xs font-medium text-rose-700"
+    <UiAlert v-if="error || errors.status_id" data-testid="ticket-status-error">
+      {{ errors.status_id?.[0] ?? error }}
+    </UiAlert>
+
+    <template #footer>
+      <UiButton data-testid="ticket-status-cancel" @click="emit('close')">
+        Cancel
+      </UiButton>
+      <UiButton
+        variant="primary"
+        data-testid="ticket-status-confirm"
+        :disabled="selected === undefined || noteTooShort || reasonTooShort"
+        :loading="store.changingStatus"
+        @click="confirm"
       >
-        {{ errors.status_id?.[0] ?? error }}
-      </p>
-
-      <div
-        class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100"
-      >
-        <button
-          data-testid="ticket-status-cancel"
-          type="button"
-          @click="emit('close')"
-          class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          data-testid="ticket-status-confirm"
-          :disabled="
-            selected === undefined ||
-            noteTooShort ||
-            reasonTooShort ||
-            store.changingStatus
-          "
-          @click="confirm"
-          class="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors disabled:opacity-50"
-        >
-          Confirm
-        </button>
-      </div>
-    </div>
+        Confirm
+      </UiButton>
+    </template>
   </BaseDialog>
 </template>

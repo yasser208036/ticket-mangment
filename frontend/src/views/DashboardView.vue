@@ -2,6 +2,12 @@
 import { computed, onMounted } from 'vue'
 import StatCard from '../components/StatCard.vue'
 import ColorBadge from '../components/ColorBadge.vue'
+import UiAlert from '../components/ui/UiAlert.vue'
+import UiButton from '../components/ui/UiButton.vue'
+import UiIcon from '../components/ui/UiIcon.vue'
+import UiLoadingPanel from '../components/ui/UiLoadingPanel.vue'
+import UiPageHeader from '../components/ui/UiPageHeader.vue'
+import UiPanel from '../components/ui/UiPanel.vue'
 import { useStatsStore } from '../stores/stats'
 import { useAuthStore } from '../stores/auth'
 
@@ -49,106 +55,35 @@ const scopeLabel = computed(() =>
 </script>
 
 <template>
-  <main class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <!-- Loading State -->
-    <div
+  <main class="mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-6 lg:px-8">
+    <UiLoadingPanel
       v-if="stats.loading"
-      data-testid="dashboard-loading"
-      class="flex items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-12 shadow-sm"
-    >
-      <div class="flex items-center gap-3 text-sm font-medium text-slate-500">
-        <svg
-          class="h-5 w-5 animate-spin text-indigo-600"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            class="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            stroke-width="4"
-          />
-          <path
-            class="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8v8H4z"
-          />
-        </svg>
-        <span>Loading dashboard metrics...</span>
-      </div>
-    </div>
+      shape="cards"
+      label="Loading dashboard metrics"
+      testid="dashboard-loading"
+    />
 
-    <!-- Error State -->
-    <div
+    <UiAlert
       v-else-if="stats.error"
       data-testid="dashboard-error"
-      class="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700 shadow-sm"
+      title="Failed to load dashboard"
     >
-      <div class="flex items-center gap-2 font-semibold">
-        <svg
-          class="h-5 w-5 text-rose-500"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          />
-        </svg>
-        <span>Failed to load dashboard</span>
-      </div>
-      <p class="mt-1 text-rose-600">{{ stats.error }}</p>
-    </div>
+      {{ stats.error }}
+    </UiAlert>
 
-    <!-- Loaded Dashboard Section -->
-    <section v-else-if="stats.data" data-testid="dashboard" class="space-y-8">
-      <!-- Header Banner -->
-      <div
-        class="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"
+    <section v-else-if="stats.data" data-testid="dashboard" class="space-y-6">
+      <UiPageHeader
+        :title="`Welcome back${auth.user?.name ? `, ${auth.user.name.split(' ')[0]}` : ''}`"
+        description="Queue health, active assignments and ticket distribution."
       >
-        <div>
-          <h1
-            class="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl"
-          >
-            Welcome back{{
-              auth.user?.name ? `, ${auth.user.name.split(' ')[0]}` : ''
-            }}
-          </h1>
-          <p class="mt-1 text-sm text-slate-500">
-            Overview of queue health, active assignments, and ticket
-            distribution.
-          </p>
-        </div>
-        <div v-if="auth.isEndUser" class="flex items-center gap-3">
-          <RouterLink
-            :to="{ name: 'new-ticket' }"
-            class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition-all hover:opacity-95 hover:shadow-lg active:scale-95"
-          >
-            <svg
-              class="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2.5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            <span>New ticket</span>
-          </RouterLink>
-        </div>
-      </div>
+        <template v-if="auth.isEndUser" #actions>
+          <UiButton variant="primary" icon="plus" :to="{ name: 'new-ticket' }">
+            New ticket
+          </UiButton>
+        </template>
+      </UiPageHeader>
 
-      <!-- Stat Cards Grid -->
-      <div class="grid gap-5 sm:grid-cols-3">
+      <div class="grid gap-4 sm:grid-cols-3">
         <StatCard
           v-if="!auth.isEndUser"
           label="My open tickets"
@@ -178,137 +113,90 @@ const scopeLabel = computed(() =>
         />
       </div>
 
-      <!-- Breakdown Grid -->
-      <div class="grid gap-6 lg:grid-cols-2">
-        <!-- Status Breakdown -->
-        <section
+      <div class="grid gap-5 lg:grid-cols-2">
+        <UiPanel
           data-testid="dashboard-by-status"
-          class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm"
+          :title="
+            scopeLabel === 'Queue' ? 'Queue by status' : 'My tickets by status'
+          "
+          eyebrow="Distribution"
         >
-          <div
-            class="flex items-center justify-between border-b border-slate-100 pb-4"
-          >
-            <h2 class="text-base font-bold text-slate-900">
-              {{
-                scopeLabel === 'Queue'
-                  ? 'Queue by status'
-                  : 'My tickets by status'
-              }}
-            </h2>
-            <span
-              class="text-xs font-semibold text-slate-400 uppercase tracking-wider"
-            >
-              Distribution
-            </span>
-          </div>
-
-          <div class="mt-4 divide-y divide-slate-100">
+          <div class="divide-y divide-line">
             <RouterLink
               v-for="row in stats.data.by_status"
               :key="row.id"
               :to="{ name: 'tickets', query: { status: String(row.id) } }"
-              class="group flex items-center justify-between py-3.5 transition-colors hover:bg-slate-50/80 -mx-2 px-2 rounded-xl"
+              class="ui-focus group flex items-center justify-between gap-4 px-5 py-2.5 transition-colors hover:bg-sunken sm:px-6"
             >
+              <ColorBadge :name="row.name" :color="row.color" />
               <div class="flex items-center gap-3">
-                <ColorBadge :name="row.name" :color="row.color" />
-              </div>
-              <div class="flex items-center gap-3">
-                <div
-                  class="hidden sm:block h-1.5 w-24 overflow-hidden rounded-full bg-slate-100"
+                <!-- The bar is a second reading of the same number, not a
+                     separate fact, so it is decorative to assistive tech. -->
+                <span
+                  class="hidden h-1 w-24 overflow-hidden rounded-full bg-ink-100 sm:block"
+                  aria-hidden="true"
                 >
-                  <div
-                    class="h-full rounded-full transition-all duration-500"
+                  <span
+                    class="block h-full rounded-full transition-[width] duration-500"
                     :style="{
                       width: `${Math.round((row.count / totalStatusTickets) * 100)}%`,
                       backgroundColor: row.color,
                     }"
                   />
-                </div>
+                </span>
                 <span
-                  class="inline-flex min-w-6 items-center justify-center rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors"
+                  class="tabular w-8 text-right text-sm font-medium text-ink-900"
                 >
                   {{ row.count }}
                 </span>
-                <svg
-                  class="h-4 w-4 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
+                <UiIcon
+                  name="chevron-right"
+                  class="h-3.5 w-3.5 text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-ink-500"
+                />
               </div>
             </RouterLink>
           </div>
-        </section>
+        </UiPanel>
 
-        <!-- Priority Breakdown -->
-        <section
+        <UiPanel
           data-testid="dashboard-by-priority"
-          class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm"
+          title="Tickets by priority"
+          eyebrow="Urgency"
         >
-          <div
-            class="flex items-center justify-between border-b border-slate-100 pb-4"
-          >
-            <h2 class="text-base font-bold text-slate-900">
-              Tickets by priority
-            </h2>
-            <span
-              class="text-xs font-semibold text-slate-400 uppercase tracking-wider"
-            >
-              Urgency
-            </span>
-          </div>
-
-          <div class="mt-4 divide-y divide-slate-100">
+          <div class="divide-y divide-line">
             <RouterLink
               v-for="row in stats.data.by_priority"
               :key="row.id"
               :to="{ name: 'tickets', query: { priority: String(row.id) } }"
-              class="group flex items-center justify-between py-3.5 transition-colors hover:bg-slate-50/80 -mx-2 px-2 rounded-xl"
+              class="ui-focus group flex items-center justify-between gap-4 px-5 py-2.5 transition-colors hover:bg-sunken sm:px-6"
             >
+              <ColorBadge :name="row.name" :color="row.color" />
               <div class="flex items-center gap-3">
-                <ColorBadge :name="row.name" :color="row.color" />
-              </div>
-              <div class="flex items-center gap-3">
-                <div
-                  class="hidden sm:block h-1.5 w-24 overflow-hidden rounded-full bg-slate-100"
+                <span
+                  class="hidden h-1 w-24 overflow-hidden rounded-full bg-ink-100 sm:block"
+                  aria-hidden="true"
                 >
-                  <div
-                    class="h-full rounded-full transition-all duration-500"
+                  <span
+                    class="block h-full rounded-full transition-[width] duration-500"
                     :style="{
                       width: `${Math.round((row.count / totalPriorityTickets) * 100)}%`,
                       backgroundColor: row.color,
                     }"
                   />
-                </div>
+                </span>
                 <span
-                  class="inline-flex min-w-6 items-center justify-center rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors"
+                  class="tabular w-8 text-right text-sm font-medium text-ink-900"
                 >
                   {{ row.count }}
                 </span>
-                <svg
-                  class="h-4 w-4 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
+                <UiIcon
+                  name="chevron-right"
+                  class="h-3.5 w-3.5 text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-ink-500"
+                />
               </div>
             </RouterLink>
           </div>
-        </section>
+        </UiPanel>
       </div>
     </section>
   </main>

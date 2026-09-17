@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import UiButton from './components/ui/UiButton.vue'
+import UiIcon from './components/ui/UiIcon.vue'
 import { useAuthStore } from './stores/auth'
 
 const auth = useAuthStore()
@@ -27,6 +29,37 @@ const roleLabel = computed(
   () => ROLE_LABELS[auth.user?.role ?? ''] ?? auth.user?.role,
 )
 
+// One list, rendered twice — the desktop bar and the mobile drawer used to
+// carry two hand-maintained copies of the same seven links, and a link added
+// to one of them silently went missing from the other.
+type NavLink = { to: string; label: string; testid: string }
+
+const mainLinks = computed<NavLink[]>(() => [
+  { to: 'tickets', label: 'Tickets', testid: 'nav-tickets' },
+  ...(auth.isEndUser
+    ? [{ to: 'new-ticket', label: 'New ticket', testid: 'nav-new-ticket' }]
+    : []),
+])
+
+const adminLinks = computed<NavLink[]>(() =>
+  auth.isAdmin
+    ? [
+        {
+          to: 'admin-categories',
+          label: 'Categories',
+          testid: 'nav-categories',
+        },
+        { to: 'admin-users', label: 'Users', testid: 'nav-users' },
+        { to: 'admin-workload', label: 'Workload', testid: 'nav-workload' },
+        {
+          to: 'admin-assignment-requests',
+          label: 'Requests',
+          testid: 'nav-assignment-requests',
+        },
+      ]
+    : [],
+)
+
 watch(
   () => route.path,
   () => {
@@ -45,271 +78,132 @@ async function signOut(): Promise<void> {
 
 <template>
   <div
-    class="min-h-screen flex flex-col bg-slate-50/60 font-sans text-slate-900 antialiased"
+    class="flex min-h-screen flex-col bg-canvas font-sans text-ink-900 antialiased"
   >
     <header
       v-if="auth.isAuthenticated"
-      class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-md transition-all"
+      class="sticky top-0 z-40 border-b border-line bg-surface/85 backdrop-blur-md"
     >
       <div
-        class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8"
+        class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5 sm:px-6 lg:px-8"
       >
-        <!-- Left: Logo & Nav -->
-        <div class="flex items-center gap-8">
+        <div class="flex min-w-0 items-center gap-7">
           <RouterLink
             :to="{ name: 'home' }"
-            class="flex items-center gap-2.5 text-lg font-bold tracking-tight text-slate-900 transition-opacity hover:opacity-90"
+            class="ui-focus flex shrink-0 items-center gap-2 rounded-md text-[15px] font-semibold tracking-tight text-ink-900"
           >
-            <div
-              class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/20"
-            >
-              <svg
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2.2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
             <span
-              class="bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent"
-              >Deskflow</span
+              class="flex h-7 w-7 items-center justify-center rounded-lg bg-ink-900 text-white"
             >
+              <UiIcon name="bolt" class="h-4 w-4" :stroke-width="2" />
+            </span>
+            Deskflow
           </RouterLink>
 
-          <nav
-            class="hidden items-center gap-1 text-sm font-medium text-slate-600 md:flex"
-          >
+          <nav class="hidden items-center gap-0.5 text-sm md:flex">
             <RouterLink
-              :to="{ name: 'tickets' }"
-              class="rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-tickets"
+              v-for="link in [...mainLinks, ...adminLinks]"
+              :key="link.testid"
+              :to="{ name: link.to }"
+              :data-testid="link.testid"
+              class="ui-focus rounded-md px-2.5 py-1.5 font-medium text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900"
+              active-class="bg-brand-50 text-brand-700"
             >
-              Tickets
-            </RouterLink>
-            <RouterLink
-              v-if="auth.isEndUser"
-              :to="{ name: 'new-ticket' }"
-              class="rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-new-ticket"
-            >
-              New ticket
-            </RouterLink>
-
-            <div v-if="auth.isAdmin" class="mx-1.5 h-4 w-px bg-slate-200" />
-
-            <RouterLink
-              v-if="auth.isAdmin"
-              :to="{ name: 'admin-categories' }"
-              class="rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-categories"
-            >
-              Categories
-            </RouterLink>
-            <RouterLink
-              v-if="auth.isAdmin"
-              :to="{ name: 'admin-users' }"
-              class="rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-users"
-            >
-              Users
-            </RouterLink>
-            <RouterLink
-              v-if="auth.isAdmin"
-              :to="{ name: 'admin-workload' }"
-              class="rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-workload"
-            >
-              Workload
-            </RouterLink>
-            <RouterLink
-              v-if="auth.isAdmin"
-              :to="{ name: 'admin-assignment-requests' }"
-              class="rounded-lg px-3 py-2 transition-all hover:bg-slate-100 hover:text-slate-900"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-assignment-requests"
-            >
-              Assignment requests
+              {{ link.label }}
             </RouterLink>
           </nav>
         </div>
 
-        <!-- Right: Profile & Actions -->
-        <div class="flex items-center gap-3">
-          <div class="hidden items-center gap-2.5 sm:flex">
-            <div
-              class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700 ring-2 ring-white shadow-xs"
+        <div class="flex items-center gap-2">
+          <div class="hidden items-center gap-2 sm:flex">
+            <span
+              class="flex h-7 w-7 items-center justify-center rounded-full bg-ink-100 text-[11px] font-semibold text-ink-600"
+              aria-hidden="true"
             >
               {{ userInitials }}
-            </div>
-            <div class="flex flex-col">
+            </span>
+            <span class="flex flex-col leading-tight">
               <span
-                class="text-xs font-semibold text-slate-900"
+                class="text-xs font-medium text-ink-900"
                 data-testid="session-user"
               >
                 {{ auth.user?.name }}
               </span>
-              <span
-                class="text-[10px] font-medium uppercase tracking-wider text-slate-500"
-              >
-                {{ roleLabel }}
-              </span>
-            </div>
+              <span class="text-[11px] text-ink-500">{{ roleLabel }}</span>
+            </span>
           </div>
-
-          <div class="hidden h-5 w-px bg-slate-200 sm:block" />
 
           <RouterLink
             :to="{ name: 'account-password' }"
-            class="hidden rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 sm:block"
-            active-class="text-indigo-600 font-semibold"
+            class="ui-focus hidden rounded-md px-2 py-1.5 text-xs font-medium text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900 sm:block"
+            active-class="bg-brand-50 text-brand-700"
             data-testid="nav-password"
           >
             Password
           </RouterLink>
 
-          <button
-            type="button"
-            @click="signOut"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition-all hover:bg-slate-50 hover:text-rose-600 hover:border-rose-200 active:scale-95"
+          <UiButton
+            size="sm"
+            icon="logout"
             data-testid="sign-out"
+            @click="signOut"
           >
-            <svg
-              class="h-3.5 w-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
-            <span>Sign out</span>
-          </button>
+            <span class="hidden sm:inline">Sign out</span>
+          </UiButton>
 
-          <!-- Mobile menu toggle -->
           <button
             type="button"
-            @click="mobileMenuOpen = !mobileMenuOpen"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 md:hidden"
+            class="ui-focus inline-flex h-8 w-8 items-center justify-center rounded-md border border-line-strong text-ink-600 transition-colors hover:bg-ink-50 md:hidden"
             aria-label="Toggle menu"
+            :aria-expanded="mobileMenuOpen"
+            @click="mobileMenuOpen = !mobileMenuOpen"
           >
-            <svg
-              v-if="!mobileMenuOpen"
-              class="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M4 6h16M4 12h16M4 18h16"
-              />
-            </svg>
-            <svg
-              v-else
-              class="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <UiIcon
+              :name="mobileMenuOpen ? 'close' : 'menu'"
+              class="h-4.5 w-4.5"
+            />
           </button>
         </div>
       </div>
 
-      <!-- Mobile drawer -->
       <div
         v-if="mobileMenuOpen"
-        class="border-t border-slate-200 bg-white px-4 py-4 md:hidden shadow-lg animate-in slide-in-from-top-2"
+        class="border-t border-line bg-surface px-4 py-3 md:hidden"
       >
-        <nav class="grid gap-1 text-sm font-medium text-slate-700">
+        <nav class="grid gap-0.5 text-sm">
           <RouterLink
-            :to="{ name: 'tickets' }"
-            class="rounded-lg px-3 py-2 hover:bg-slate-100"
-            active-class="bg-indigo-50 text-indigo-700 font-semibold"
-            data-testid="nav-tickets"
+            v-for="link in mainLinks"
+            :key="link.testid"
+            :to="{ name: link.to }"
+            :data-testid="link.testid"
+            class="ui-focus rounded-md px-2.5 py-2 font-medium text-ink-700 hover:bg-ink-100"
+            active-class="bg-brand-50 text-brand-700"
           >
-            Tickets
+            {{ link.label }}
           </RouterLink>
-          <RouterLink
-            v-if="auth.isEndUser"
-            :to="{ name: 'new-ticket' }"
-            class="rounded-lg px-3 py-2 hover:bg-slate-100"
-            active-class="bg-indigo-50 text-indigo-700 font-semibold"
-            data-testid="nav-new-ticket"
-          >
-            New ticket
-          </RouterLink>
-          <template v-if="auth.isAdmin">
-            <div class="my-1 border-t border-slate-100" />
-            <span
-              class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400"
-              >Admin</span
-            >
+
+          <template v-if="adminLinks.length">
+            <span class="ui-eyebrow mt-3 px-2.5 pb-1">Admin</span>
             <RouterLink
-              :to="{ name: 'admin-categories' }"
-              class="rounded-lg px-3 py-2 hover:bg-slate-100"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-categories"
+              v-for="link in adminLinks"
+              :key="link.testid"
+              :to="{ name: link.to }"
+              :data-testid="link.testid"
+              class="ui-focus rounded-md px-2.5 py-2 font-medium text-ink-700 hover:bg-ink-100"
+              active-class="bg-brand-50 text-brand-700"
             >
-              Categories
-            </RouterLink>
-            <RouterLink
-              :to="{ name: 'admin-users' }"
-              class="rounded-lg px-3 py-2 hover:bg-slate-100"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-users"
-            >
-              Users
-            </RouterLink>
-            <RouterLink
-              :to="{ name: 'admin-workload' }"
-              class="rounded-lg px-3 py-2 hover:bg-slate-100"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-workload"
-            >
-              Workload
-            </RouterLink>
-            <RouterLink
-              :to="{ name: 'admin-assignment-requests' }"
-              class="rounded-lg px-3 py-2 hover:bg-slate-100"
-              active-class="bg-indigo-50 text-indigo-700 font-semibold"
-              data-testid="nav-assignment-requests"
-            >
-              Assignment requests
+              {{ link.label }}
             </RouterLink>
           </template>
-          <div class="my-1 border-t border-slate-100" />
+
+          <div class="my-2 border-t border-line" />
           <RouterLink
             :to="{ name: 'account-password' }"
-            class="rounded-lg px-3 py-2 hover:bg-slate-100"
-            active-class="bg-indigo-50 text-indigo-700 font-semibold"
+            class="ui-focus rounded-md px-2.5 py-2 font-medium text-ink-700 hover:bg-ink-100"
+            active-class="bg-brand-50 text-brand-700"
             data-testid="nav-password"
           >
-            Change Password
+            Change password
           </RouterLink>
         </nav>
       </div>

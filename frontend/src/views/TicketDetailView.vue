@@ -12,6 +12,12 @@ import TicketNoteComposer from '../components/TicketNoteComposer.vue'
 import TicketRequestAssignmentDialog from '../components/TicketRequestAssignmentDialog.vue'
 import TicketStatusDialog from '../components/TicketStatusDialog.vue'
 import TicketTimeline from '../components/TicketTimeline.vue'
+import UiAlert from '../components/ui/UiAlert.vue'
+import UiButton from '../components/ui/UiButton.vue'
+import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import UiIcon from '../components/ui/UiIcon.vue'
+import UiLoadingPanel from '../components/ui/UiLoadingPanel.vue'
+import UiPanel from '../components/ui/UiPanel.vue'
 import { relativeAge } from '../lib/relativeTime'
 import { REOPENED_SLUG } from '../api/statuses'
 import { useTicketsStore } from '../stores/tickets'
@@ -43,162 +49,86 @@ async function onDeleted(): Promise<void> {
 </script>
 
 <template>
-  <main class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
-    <!-- Back to tickets nav -->
-    <div>
-      <RouterLink
-        :to="{ name: 'tickets' }"
-        class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition-colors hover:text-indigo-600"
-      >
-        <svg
-          class="h-4 w-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M10 19l-7-7m0 0l7-7m-7 7h18"
-          />
-        </svg>
-        <span>Back to tickets</span>
-      </RouterLink>
-    </div>
+  <main class="mx-auto max-w-7xl space-y-5 px-4 py-7 sm:px-6 lg:px-8">
+    <RouterLink
+      :to="{ name: 'tickets' }"
+      class="ui-focus inline-flex items-center gap-1.5 rounded text-xs font-medium text-ink-500 transition-colors hover:text-ink-900"
+    >
+      <UiIcon name="arrow-left" class="h-3.5 w-3.5" />
+      Back to tickets
+    </RouterLink>
 
-    <!-- Loading State -->
-    <div
+    <UiLoadingPanel
       v-if="store.detailLoading"
-      data-testid="ticket-loading"
-      class="flex items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-12 shadow-sm"
-    >
-      <div class="flex items-center gap-3 text-sm font-medium text-slate-500">
-        <svg
-          class="h-5 w-5 animate-spin text-indigo-600"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            class="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            stroke-width="4"
-          />
-          <path
-            class="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8v8H4z"
-          />
-        </svg>
-        <span>Loading ticket details...</span>
-      </div>
-    </div>
+      shape="card"
+      label="Loading ticket"
+      testid="ticket-loading"
+      :rows="4"
+    />
 
-    <!-- Not Found State -->
-    <section
+    <UiEmptyState
       v-else-if="store.detailNotFound"
-      data-testid="ticket-not-found"
-      class="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-12 text-center shadow-sm"
+      icon="alert-triangle"
+      title="Ticket not found"
+      description="It may have been deleted."
+      testid="ticket-not-found"
     >
-      <div
-        class="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-600"
-      >
-        <svg
-          class="h-6 w-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          />
-        </svg>
-      </div>
-      <h2 class="mt-4 text-lg font-bold text-slate-900">Ticket not found</h2>
-      <p class="mt-1 text-sm text-slate-500">
-        Ticket not found. It may have been deleted.
-      </p>
-      <RouterLink
+      <UiButton
+        variant="primary"
         :to="{ name: 'tickets' }"
         data-testid="ticket-not-found-back"
-        class="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
       >
         Back to tickets
-      </RouterLink>
-    </section>
+      </UiButton>
+    </UiEmptyState>
 
-    <!-- Escalated Out of View State -->
-    <section
+    <UiEmptyState
       v-else-if="store.escalatedOutOfView"
-      data-testid="ticket-escalated-away"
-      class="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-12 text-center shadow-sm"
+      icon="alert-triangle"
+      title="Ticket escalated"
+      description="It has been reassigned to an administrator and is no longer in your queue."
+      testid="ticket-escalated-away"
     >
-      <div
-        class="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-600"
-      >
-        <svg
-          class="h-6 w-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-          />
-        </svg>
-      </div>
-      <h2 class="mt-4 text-lg font-bold text-slate-900">Ticket escalated</h2>
-      <p class="mt-1 text-sm text-slate-500">
-        It has been reassigned to an administrator and is no longer in your
-        queue.
-      </p>
-      <RouterLink
+      <UiButton
+        variant="primary"
         :to="{ name: 'tickets' }"
         data-testid="ticket-escalated-away-back"
-        class="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
       >
         Back to tickets
-      </RouterLink>
-    </section>
+      </UiButton>
+    </UiEmptyState>
 
-    <!-- Error State -->
-    <div
-      v-else-if="store.detailError"
-      data-testid="ticket-error"
-      class="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700 shadow-sm"
-    >
+    <UiAlert v-else-if="store.detailError" data-testid="ticket-error">
       {{ store.detailError }}
-    </div>
+    </UiAlert>
 
-    <!-- Ticket Detail Article -->
     <article
       v-else-if="store.current"
       data-testid="ticket-detail"
-      class="space-y-6"
+      class="space-y-5"
     >
-      <!-- Header Card -->
-      <div
-        class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm"
-      >
+      <div class="ui-card ui-card-pad">
         <div
-          class="flex flex-col justify-between gap-4 lg:flex-row lg:items-center"
+          class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start"
         >
-          <div class="space-y-2">
-            <div class="flex flex-wrap items-center gap-2.5">
-              <span
-                class="font-mono text-sm font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg"
-              >
+          <div class="min-w-0 space-y-2.5">
+            <div class="flex items-center gap-2.5">
+              <span class="font-mono text-xs font-medium text-ink-500">
                 {{ store.current.reference }}
               </span>
+              <span
+                v-if="store.current.reopen_count > 0"
+                data-testid="ticket-reopen-count"
+                class="ui-chip"
+              >
+                Reopened {{ store.current.reopen_count }}
+                {{ store.current.reopen_count === 1 ? 'time' : 'times' }}
+              </span>
+            </div>
+
+            <h1 class="ui-title">{{ store.current.subject }}</h1>
+
+            <div class="flex flex-wrap items-center gap-1.5">
               <CategoryBadge :category="store.current.category" />
               <ColorBadge
                 :name="store.current.priority.name"
@@ -215,35 +145,18 @@ async function onDeleted(): Promise<void> {
                 :color="store.current.status.color"
               />
             </div>
-            <p
-              v-if="store.current.reopen_count > 0"
-              data-testid="ticket-reopen-count"
-              class="text-xs text-slate-500"
-            >
-              Reopened {{ store.current.reopen_count }}
-              {{ store.current.reopen_count === 1 ? 'time' : 'times' }}
-            </p>
-            <h1
-              class="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl"
-            >
-              {{ store.current.reference }}
-            </h1>
-            <h2 class="text-base font-medium text-slate-600">
-              {{ store.current.subject }}
-            </h2>
           </div>
 
-          <div class="shrink-0">
-            <TicketActionToolbar
-              :ticket="store.current"
-              @assign="assignOpen = true"
-              @edit="editOpen = true"
-              @escalate="escalateOpen = true"
-              @status="statusOpen = true"
-              @request-assignment="requestAssignmentOpen = true"
-              @delete="deleteOpen = true"
-            />
-          </div>
+          <TicketActionToolbar
+            :ticket="store.current"
+            class="shrink-0"
+            @assign="assignOpen = true"
+            @edit="editOpen = true"
+            @escalate="escalateOpen = true"
+            @status="statusOpen = true"
+            @request-assignment="requestAssignmentOpen = true"
+            @delete="deleteOpen = true"
+          />
         </div>
       </div>
 
@@ -289,259 +202,166 @@ async function onDeleted(): Promise<void> {
         @close="statusOpen = false"
       />
 
-      <!-- Resolution Block -->
-      <section
+      <UiAlert
         v-if="store.current.resolution"
+        tone="success"
+        title="Resolution"
         data-testid="ticket-resolution"
-        class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-5 text-emerald-900 shadow-xs"
       >
-        <svg
-          class="h-5 w-5 shrink-0 text-emerald-600 mt-0.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
-        <div class="space-y-1">
-          <h4
-            class="text-xs font-bold uppercase tracking-wider text-emerald-800"
-          >
-            Resolution
-          </h4>
-          <p data-testid="ticket-resolution-note" class="text-sm font-medium">
-            {{ store.current.resolution.note }}
-          </p>
-          <p class="text-xs text-emerald-700">
-            <span data-testid="ticket-resolution-by">{{
-              store.current.resolution.by?.name || 'System'
-            }}</span>
-            <template v-if="store.current.resolution.at">
-              ·
-              <span :title="store.current.resolution.at">{{
-                relativeAge(store.current.resolution.at)
-              }}</span>
-            </template>
-          </p>
-        </div>
-      </section>
-
-      <!-- Escalation Alert Banner -->
-      <section
-        v-if="store.current.escalation_level > 0"
-        data-testid="ticket-escalation"
-        class="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-5 text-amber-900 shadow-xs"
-      >
-        <svg
-          class="h-5 w-5 shrink-0 text-amber-600 mt-0.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          />
-        </svg>
-        <div class="space-y-1">
-          <h4
-            data-testid="ticket-escalation-level"
-            class="text-xs font-bold uppercase tracking-wider text-amber-800"
-          >
-            Escalated Ticket (Level {{ store.current.escalation_level }})
-          </h4>
-          <p class="text-sm font-medium">
-            {{ store.current.escalation_reason }}
-            {{ store.current.escalated_by?.name }}
-          </p>
-        </div>
-      </section>
-
-      <!-- Pending Assignment Request Banner -->
-      <section
-        v-if="store.current.my_pending_assignment_request"
-        data-testid="ticket-pending-assignment-request"
-        class="flex items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 p-5 text-indigo-900 shadow-xs"
-      >
-        <svg
-          class="h-5 w-5 shrink-0 text-indigo-600 mt-0.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m1.586-9.414a2 2 0 112.828 2.828L12.828 15H10v-2.828l8.586-8.586z"
-          />
-        </svg>
-        <p class="text-sm font-medium">
-          You asked for this ticket. An administrator is reviewing it.
+        <p data-testid="ticket-resolution-note" class="whitespace-pre-wrap">
+          {{ store.current.resolution.note }}
         </p>
-      </section>
+        <p class="mt-1 text-xs">
+          <span data-testid="ticket-resolution-by">
+            {{ store.current.resolution.by?.name || 'System' }}
+          </span>
+          <template v-if="store.current.resolution.at">
+            ·
+            <span :title="store.current.resolution.at">
+              {{ relativeAge(store.current.resolution.at) }}
+            </span>
+          </template>
+        </p>
+      </UiAlert>
 
-      <!-- 2-Column Content Grid -->
-      <div class="grid gap-6 lg:grid-cols-3">
-        <!-- Main Column (Description & Lifecycle) -->
-        <div class="space-y-6 lg:col-span-2">
-          <!-- Description Card -->
-          <div
-            class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm space-y-3"
-          >
-            <h3
-              class="text-xs font-bold uppercase tracking-wider text-slate-400"
-            >
-              Description
-            </h3>
+      <UiAlert
+        v-if="store.current.escalation_level > 0"
+        tone="warning"
+        data-testid="ticket-escalation"
+      >
+        <p data-testid="ticket-escalation-level" class="font-semibold">
+          Escalated Ticket (Level {{ store.current.escalation_level }})
+        </p>
+        <p class="mt-0.5 whitespace-pre-wrap">
+          {{ store.current.escalation_reason }}
+          {{ store.current.escalated_by?.name }}
+        </p>
+      </UiAlert>
+
+      <UiAlert
+        v-if="store.current.my_pending_assignment_request"
+        tone="info"
+        data-testid="ticket-pending-assignment-request"
+      >
+        You asked for this ticket. An administrator is reviewing it.
+      </UiAlert>
+
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="space-y-5 lg:col-span-2">
+          <UiPanel title="Description">
             <p
-              class="whitespace-pre-wrap text-sm leading-relaxed text-slate-800 font-normal"
+              class="whitespace-pre-wrap px-5 py-4 text-sm leading-relaxed text-ink-800 sm:px-6"
             >
               {{ store.current.description }}
             </p>
-          </div>
+          </UiPanel>
 
-          <!-- Lifecycle / Response Milestones -->
-          <div
-            class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm space-y-4"
-          >
-            <h3
-              class="text-xs font-bold uppercase tracking-wider text-slate-400"
+          <UiPanel title="Milestones">
+            <dl
+              class="grid divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0"
             >
-              Lifecycle Milestones
-            </h3>
-            <div class="grid gap-4 sm:grid-cols-3 text-xs">
-              <div class="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                <span class="text-slate-500 font-medium">First Responded</span>
-                <p
+              <div class="px-5 py-4 sm:px-6">
+                <dt class="ui-eyebrow">First responded</dt>
+                <dd
                   v-if="store.current.first_responded_at"
                   data-testid="ticket-first-responded"
-                  class="mt-1 font-semibold text-slate-800"
+                  class="mt-1 text-sm font-medium text-ink-900"
+                  :title="store.current.first_responded_at"
                 >
                   {{ relativeAge(store.current.first_responded_at) }}
-                </p>
-                <p v-else class="mt-1 text-slate-400 italic">Not yet</p>
+                </dd>
+                <dd v-else class="mt-1 text-sm text-ink-400">Not yet</dd>
               </div>
-
-              <div class="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                <span class="text-slate-500 font-medium">Resolved</span>
-                <p
+              <div class="px-5 py-4 sm:px-6">
+                <dt class="ui-eyebrow">Resolved</dt>
+                <dd
                   v-if="store.current.resolved_at"
                   data-testid="ticket-resolved"
-                  class="mt-1 font-semibold text-slate-800"
+                  class="mt-1 text-sm font-medium text-ink-900"
+                  :title="store.current.resolved_at"
                 >
                   {{ relativeAge(store.current.resolved_at) }}
-                </p>
-                <p v-else class="mt-1 text-slate-400 italic">Pending</p>
+                </dd>
+                <dd v-else class="mt-1 text-sm text-ink-400">Pending</dd>
               </div>
-
-              <div class="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                <span class="text-slate-500 font-medium">Closed</span>
-                <p
+              <div class="px-5 py-4 sm:px-6">
+                <dt class="ui-eyebrow">Closed</dt>
+                <dd
                   v-if="store.current.closed_at"
                   data-testid="ticket-closed"
-                  class="mt-1 font-semibold text-slate-800"
+                  class="mt-1 text-sm font-medium text-ink-900"
+                  :title="store.current.closed_at"
                 >
                   {{ relativeAge(store.current.closed_at) }}
-                </p>
-                <p v-else class="mt-1 text-slate-400 italic">Open</p>
+                </dd>
+                <dd v-else class="mt-1 text-sm text-ink-400">Open</dd>
               </div>
-            </div>
-          </div>
+            </dl>
+          </UiPanel>
         </div>
 
-        <!-- Sidebar Column (Requester, Assignee, Meta) -->
-        <div class="space-y-6">
-          <!-- Requester Card -->
-          <div
-            class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm space-y-4"
-          >
-            <h3
-              class="text-xs font-bold uppercase tracking-wider text-slate-400"
-            >
-              Requester
-            </h3>
-            <div class="flex items-center gap-3">
-              <div
-                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700"
+        <div class="space-y-5">
+          <UiPanel title="Requester">
+            <div class="flex items-center gap-3 px-5 py-4 sm:px-6">
+              <span
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-semibold text-ink-600"
+                aria-hidden="true"
               >
                 {{ store.current.requester.name.charAt(0).toUpperCase() }}
-              </div>
+              </span>
               <div class="min-w-0">
-                <p class="truncate text-sm font-bold text-slate-900">
+                <p class="truncate text-sm font-medium text-ink-900">
                   {{ store.current.requester.name }}
                 </p>
-                <p
-                  v-if="store.current.requester.company"
-                  class="truncate text-xs text-slate-500"
-                >
+                <p class="truncate text-xs text-ink-500">
                   {{ store.current.requester.email }}
                 </p>
               </div>
             </div>
+          </UiPanel>
 
-            <!-- <div
-              v-if="store.current.requester.phone"
-              class="border-t border-slate-100 pt-3 text-xs text-slate-600"
-            >
-              <span class="font-medium text-slate-400">Phone: </span
-              >{{ store.current.requester.phone }}
-            </div> -->
-          </div>
-
-          <!-- Assignment & Creator Card -->
-          <div
-            class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm space-y-4 text-xs"
-          >
-            <h3
-              class="text-xs font-bold uppercase tracking-wider text-slate-400"
-            >
-              Assignment & Audit
-            </h3>
-
-            <div class="space-y-3">
-              <div class="flex justify-between py-1 border-b border-slate-100">
-                <span class="text-slate-500 font-medium">Assignee:</span>
-                <span class="font-semibold text-slate-800">
-                  Assignee: {{ store.current.assignee?.name || 'Unassigned' }}
-                </span>
+          <UiPanel title="Assignment &amp; audit">
+            <dl class="divide-y divide-line text-xs">
+              <div
+                class="flex items-baseline justify-between gap-3 px-5 py-2.5 sm:px-6"
+              >
+                <dt class="text-ink-500">Assignee</dt>
+                <dd class="text-right font-medium text-ink-900">
+                  {{ store.current.assignee?.name || 'Unassigned' }}
+                </dd>
               </div>
-
-              <div class="flex justify-between py-1 border-b border-slate-100">
-                <span class="text-slate-500 font-medium">Creator:</span>
-                <span class="font-semibold text-slate-800">
-                  Creator: {{ store.current.creator?.name }}
-                </span>
+              <div
+                class="flex items-baseline justify-between gap-3 px-5 py-2.5 sm:px-6"
+              >
+                <dt class="text-ink-500">Creator</dt>
+                <dd class="text-right font-medium text-ink-900">
+                  {{ store.current.creator?.name }}
+                </dd>
               </div>
-
-              <div class="flex justify-between py-1 border-b border-slate-100">
-                <span class="text-slate-500 font-medium">Created:</span>
-                <span
-                  class="font-semibold text-slate-800"
+              <div
+                class="flex items-baseline justify-between gap-3 px-5 py-2.5 sm:px-6"
+              >
+                <dt class="text-ink-500">Created</dt>
+                <dd
+                  class="text-right font-medium text-ink-900"
                   :title="store.current.created_at"
                 >
                   {{ relativeAge(store.current.created_at) }}
-                </span>
+                </dd>
               </div>
-
-              <div class="flex justify-between py-1">
-                <span class="text-slate-500 font-medium">Updated:</span>
-                <span
-                  class="font-semibold text-slate-800"
+              <div
+                class="flex items-baseline justify-between gap-3 px-5 py-2.5 sm:px-6"
+              >
+                <dt class="text-ink-500">Updated</dt>
+                <dd
+                  class="text-right font-medium text-ink-900"
                   :title="store.current.updated_at"
                 >
                   {{ relativeAge(store.current.updated_at) }}
-                </span>
+                </dd>
               </div>
-            </div>
-          </div>
+            </dl>
+          </UiPanel>
         </div>
       </div>
 

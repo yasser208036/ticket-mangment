@@ -1,19 +1,56 @@
 @import 'tailwindcss';
 
+/*
+ * Design tokens. Every colour the UI paints comes from here, so a restyle is
+ * a change to this block rather than a sweep through thirty templates. The
+ * ramps are deliberately warm-neutral: the status/priority/category colours
+ * are chosen by admins and stored in the database, and a cool slate chrome
+ * fought with the warmer ones among them.
+ */
+@theme {
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Neutral ink ramp — chrome, borders, text. */
+  --color-ink-50: #f7f7f8;
+  --color-ink-100: #efeff1;
+  --color-ink-200: #e4e4e7;
+  --color-ink-300: #d1d1d6;
+  --color-ink-400: #a0a0ab;
+  --color-ink-500: #74747f;
+  --color-ink-600: #55555f;
+  --color-ink-700: #3f3f47;
+  --color-ink-800: #2a2a30;
+  --color-ink-900: #18181b;
+
+  /* Brand iris — links, active nav, focus, selected state. One accent only. */
+  --color-brand-50: #f1f0fd;
+  --color-brand-100: #e5e2fb;
+  --color-brand-200: #cdc8f7;
+  --color-brand-300: #aca3f0;
+  --color-brand-400: #8b80e8;
+  --color-brand-500: #7163dd;
+  --color-brand-600: #5b4bd0;
+  --color-brand-700: #4b3cb2;
+  --color-brand-800: #3e3391;
+  --color-brand-900: #352d75;
+
+  /* Surfaces. */
+  --color-canvas: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-sunken: #fafafb;
+  --color-line: #e7e7ea;
+  --color-line-strong: #d6d6db;
+
+  --radius-card: 0.75rem;
+}
+
 :root {
-  font-family:
-    'Inter',
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    sans-serif;
-  color: #0f172a;
-  background-color: #f8fafc;
+  color: var(--color-ink-900);
+  background-color: var(--color-canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -23,12 +60,8 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: radial-gradient(
-    circle at 50% 0%,
-    rgba(241, 245, 249, 0.8) 0%,
-    rgba(248, 250, 252, 1) 100%
-  );
-  color: #0f172a;
+  background: var(--color-canvas);
+  color: var(--color-ink-900);
 }
 
 button,
@@ -44,10 +77,15 @@ select {
   flex-direction: column;
 }
 
-/* Custom modern scrollbars */
+/* Counts, references and timestamps line up column-wise without a monospace
+ * face when the digits are the same width. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -55,10 +93,174 @@ select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-ink-300);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-ink-400);
+}
+
+/*
+ * The design system. These classes are the vocabulary the templates speak;
+ * `src/components/ui/` wraps the composite ones in components, but a plain
+ * element can reach for the class directly where a component would only add
+ * a layer of indirection.
+ */
+/* --- Focus ---------------------------------------------------------- */
+/* Applied to every interactive element. `focus-visible`, not `focus`, so a
+ * mouse click does not leave a ring behind. */
+@utility ui-focus {
+  @apply outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas;
+}
+
+/* --- Surfaces ------------------------------------------------------- */
+@utility ui-card {
+  @apply rounded-card border border-line bg-surface;
+}
+
+@utility ui-card-pad {
+  @apply p-5 sm:p-6;
+}
+
+/* A card header with a rule under it, matching the table header rhythm. */
+@utility ui-card-head {
+  @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5 sm:px-6;
+}
+
+/* --- Typography ----------------------------------------------------- */
+@utility ui-title {
+  @apply text-xl font-semibold tracking-tight text-ink-900 sm:text-2xl;
+}
+
+@utility ui-subtitle {
+  @apply mt-1 text-sm text-ink-500;
+}
+
+@utility ui-section-title {
+  @apply text-sm font-semibold text-ink-900;
+}
+
+@utility ui-eyebrow {
+  @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-400;
+}
+
+/* --- Form controls --------------------------------------------------- */
+@utility ui-label {
+  @apply block text-xs font-medium text-ink-700;
+}
+
+@utility ui-input {
+  @apply ui-focus w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink-900 transition-colors placeholder:text-ink-400 hover:border-ink-400 focus-visible:border-brand-500 disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-400;
+}
+
+/* Native selects need the arrow room and refuse `placeholder`. */
+@utility ui-select {
+  @apply ui-input cursor-pointer pr-8;
+}
+
+@utility ui-input-invalid {
+  @apply border-rose-400 focus-visible:border-rose-500 focus-visible:ring-rose-500/50;
+}
+
+@utility ui-error-text {
+  @apply text-xs text-rose-600;
+}
+
+@utility ui-hint {
+  @apply text-xs text-ink-500;
+}
+
+/* --- Buttons --------------------------------------------------------- */
+@utility ui-btn {
+  @apply ui-focus inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-[background-color,border-color,color,opacity] disabled:pointer-events-none disabled:opacity-50;
+}
+
+/* Solid ink rather than a brand gradient: the accent stays reserved for
+ * navigation and selection, so the one primary action on a screen is the
+ * darkest thing on it and needs no colour to win. */
+@utility ui-btn-primary {
+  @apply bg-ink-900 text-white hover:bg-ink-800;
+}
+
+@utility ui-btn-secondary {
+  @apply border border-line-strong bg-surface text-ink-700 hover:bg-ink-50 hover:text-ink-900;
+}
+
+@utility ui-btn-ghost {
+  @apply text-ink-600 hover:bg-ink-100 hover:text-ink-900;
+}
+
+@utility ui-btn-danger {
+  @apply bg-rose-600 text-white hover:bg-rose-700 focus-visible:ring-rose-500/60;
+}
+
+/* A destructive action that is not the point of the screen — a row action,
+ * not a dialog's confirm. */
+@utility ui-btn-danger-quiet {
+  @apply text-rose-600 hover:bg-rose-50 focus-visible:ring-rose-500/60;
+}
+
+@utility ui-btn-sm {
+  @apply gap-1 rounded-md px-2.5 py-1.5 text-xs;
+}
+
+/* --- Tables ---------------------------------------------------------- */
+@utility ui-table {
+  @apply w-full text-left text-sm;
+}
+
+@utility ui-thead {
+  @apply border-b border-line bg-sunken;
+}
+
+@utility ui-th {
+  @apply px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-500 first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6;
+}
+
+@utility ui-tbody {
+  @apply divide-y divide-line;
+}
+
+@utility ui-tr {
+  @apply transition-colors hover:bg-sunken;
+}
+
+@utility ui-td {
+  @apply px-3 py-2.5 align-middle text-ink-700 first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6;
+}
+
+/* --- Chips ----------------------------------------------------------- */
+/* A neutral counterpart to ColorBadge, for labels with no database colour. */
+@utility ui-chip {
+  @apply inline-flex items-center gap-1 rounded-md border border-line bg-sunken px-2 py-0.5 text-xs font-medium text-ink-600;
+}
+
+@utility ui-chip-brand {
+  @apply border-brand-200 bg-brand-50 text-brand-700;
+}
+
+/* --- Links ----------------------------------------------------------- */
+@utility ui-link {
+  @apply ui-focus rounded-sm text-brand-600 transition-colors hover:text-brand-700 hover:underline;
+}
+
+/* --- Skeletons ------------------------------------------------------- */
+@utility ui-skeleton {
+  @apply animate-pulse rounded-md bg-ink-100;
+}
+
+/*
+ * Motion is decoration here — every transition is a hover tint, a pulse or a
+ * dialog's entrance, and none of it carries meaning. Honour the OS setting.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

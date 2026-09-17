@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -75,6 +75,12 @@ async function mountView(items: AssignmentRequest[] | null) {
   return wrapper
 }
 
+// The decline dialog renders via <Teleport to="body">, so it lands as a
+// sibling of the wrapper's own root in the real DOM, not a descendant.
+function body() {
+  return new DOMWrapper(document.body)
+}
+
 describe('AdminAssignmentRequestsView', () => {
   beforeEach(() => {
     vi.mocked(listAssignmentRequests).mockReset()
@@ -130,15 +136,13 @@ describe('AdminAssignmentRequestsView', () => {
       .get('[data-testid="assignment-request-decline"]')
       .trigger('click')
     expect(
-      wrapper
-        .find('[data-testid="assignment-request-decline-dialog"]')
-        .exists(),
+      body().find('[data-testid="assignment-request-decline-dialog"]').exists(),
     ).toBe(true)
 
-    await wrapper
+    await body()
       .get('[data-testid="assignment-request-decline-note"]')
       .setValue('Not the right fit.')
-    await wrapper
+    await body()
       .get('[data-testid="assignment-request-decline-confirm"]')
       .trigger('click')
     await flushPromises()

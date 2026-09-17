@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import UiAlert from '../components/ui/UiAlert.vue'
+import UiButton from '../components/ui/UiButton.vue'
+import UiField from '../components/ui/UiField.vue'
+import UiPageHeader from '../components/ui/UiPageHeader.vue'
 import { changePassword } from '../api/auth'
 import { errorMessage, validationErrors } from '../api/errors'
 
@@ -37,153 +41,77 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <main class="mx-auto max-w-xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
-    <div>
-      <h1
-        class="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl"
-      >
-        Change Password
-      </h1>
-      <p class="mt-1 text-sm text-slate-500">
-        Update your account password. You will be signed out from your other
-        devices.
-      </p>
-    </div>
+  <main class="mx-auto max-w-xl space-y-5 px-4 py-7 sm:px-6 lg:px-8">
+    <UiPageHeader
+      title="Change password"
+      description="You will be signed out from your other devices."
+    />
 
-    <!-- Success Message Banner -->
-    <div
-      v-if="changed"
-      data-testid="password-changed"
-      class="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-xs font-semibold text-emerald-800 shadow-xs"
-    >
-      <svg
-        class="h-5 w-5 shrink-0 text-emerald-600"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        stroke-width="2"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-      </svg>
-      <span
-        >Password changed. You have been signed out on your other devices.</span
-      >
-    </div>
+    <UiAlert v-if="changed" tone="success" data-testid="password-changed">
+      Password changed. You have been signed out on your other devices.
+    </UiAlert>
 
-    <!-- Error Banner -->
-    <div
-      v-if="error"
-      data-testid="password-error"
-      class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-700 shadow-xs"
-    >
-      {{ error }}
-    </div>
+    <UiAlert v-if="error" data-testid="password-error">{{ error }}</UiAlert>
 
-    <div class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
-      <form @submit.prevent="submit" class="space-y-4">
-        <!-- Current Password -->
-        <div class="space-y-1">
-          <label class="text-xs font-semibold text-slate-700"
-            >Current password</label
-          >
+    <div class="ui-card ui-card-pad">
+      <form class="space-y-4" @submit.prevent="submit">
+        <UiField
+          v-slot="field"
+          label="Current password"
+          required
+          :error="fieldErrors.current_password"
+          error-testid="password-error-current_password"
+        >
           <input
+            v-bind="field"
             v-model="currentPassword"
             data-testid="password-current"
             type="password"
             autocomplete="current-password"
             required
-            placeholder="••••••••••••"
-            class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-            :class="{
-              'border-rose-300 ring-2 ring-rose-100':
-                fieldErrors.current_password,
-            }"
+            placeholder="••••••••"
           />
-          <p
-            v-if="fieldErrors.current_password"
-            data-testid="password-error-current_password"
-            class="text-xs font-medium text-rose-600"
-          >
-            {{ fieldErrors.current_password[0] }}
-          </p>
-        </div>
+        </UiField>
 
-        <!-- New Password -->
-        <div class="space-y-1">
-          <label class="text-xs font-semibold text-slate-700"
-            >New password</label
-          >
+        <UiField
+          v-slot="field"
+          label="New password"
+          required
+          :error="fieldErrors.password"
+          error-testid="password-error-password"
+        >
           <input
+            v-bind="field"
             v-model="password"
             data-testid="password-new"
             type="password"
             autocomplete="new-password"
             required
-            placeholder="••••••••••••"
-            class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-            :class="{
-              'border-rose-300 ring-2 ring-rose-100': fieldErrors.password,
-            }"
+            placeholder="••••••••"
           />
-          <p
-            v-if="fieldErrors.password"
-            data-testid="password-error-password"
-            class="text-xs font-medium text-rose-600"
-          >
-            {{ fieldErrors.password[0] }}
-          </p>
-        </div>
+        </UiField>
 
-        <!-- Confirm Password -->
-        <div class="space-y-1">
-          <label class="text-xs font-semibold text-slate-700"
-            >Confirm password</label
-          >
+        <UiField v-slot="field" label="Confirm password" required>
           <input
+            v-bind="field"
             v-model="passwordConfirmation"
             data-testid="password-confirmation"
             type="password"
             autocomplete="new-password"
             required
-            placeholder="••••••••••••"
-            class="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+            placeholder="••••••••"
           />
-        </div>
+        </UiField>
 
-        <!-- Actions -->
-        <div class="pt-3 border-t border-slate-100 flex justify-end">
-          <button
-            data-testid="password-submit"
-            :disabled="submitting"
+        <div class="flex justify-end border-t border-line pt-4">
+          <UiButton
+            variant="primary"
             type="submit"
-            class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 disabled:opacity-60"
+            data-testid="password-submit"
+            :loading="submitting"
           >
-            <svg
-              v-if="submitting"
-              class="h-4 w-4 animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="4"
-              />
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8v8H4z"
-              />
-            </svg>
-            <span>{{ submitting ? 'Saving...' : 'Change password' }}</span>
-          </button>
+            {{ submitting ? 'Saving…' : 'Change password' }}
+          </UiButton>
         </div>
       </form>
     </div>

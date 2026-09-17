@@ -1,3 +1,13 @@
+export interface PageMeta {
+  current_page: number
+  from: number | null
+  last_page: number
+  path: string
+  per_page: number
+  to: number | null
+  total: number
+}
+
 export interface Paginated<T> {
   data: T[]
   links: {
@@ -6,13 +16,5 @@ export interface Paginated<T> {
     prev: string | null
     next: string | null
   }
-  meta: {
-    current_page: number
-    from: number | null
-    last_page: number
-    path: string
-    per_page: number
-    to: number | null
-    total: number
-  }
+  meta: PageMeta
 }
