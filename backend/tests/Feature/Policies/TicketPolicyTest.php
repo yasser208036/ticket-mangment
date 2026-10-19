@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Gate;
 use Tests\TestCase;
 
 /**
- * The story's real authorization contract: view/update/changeStatus/escalate/
+ * The story's real authorization contract: view/viewActivity/update/changeStatus/escalate/
  * addNote/requestAssignment/assign/delete, exhaustively, across every actor
  * shape the product rules distinguish. One ticket fixture -- assigned to a
  * "holding" agent and authored by an "author" end user -- exercises every
@@ -83,6 +83,15 @@ class TicketPolicyTest extends TestCase
                 'holding agent' => true,
                 'other agent' => false,
                 'author end user' => true,
+                'other end user' => false,
+            ],
+            // view() admits the author; the trail behind it is internal, so
+            // the author's cell is the regression test for the timeline leak.
+            'viewActivity' => [
+                'admin' => true,
+                'holding agent' => true,
+                'other agent' => false,
+                'author end user' => false,
                 'other end user' => false,
             ],
             'update' => [

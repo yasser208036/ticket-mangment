@@ -78,4 +78,14 @@ class TicketPolicy
     {
         return ! $user->isEndUser() && $this->view($user, $ticket);
     }
+
+    /**
+     * The trail is internal: staff notes, assignment-request notes, decline and
+     * escalation reasons all live in it. view() admits a ticket's author, so it
+     * cannot gate this -- an author may see their ticket, not its history.
+     */
+    public function viewActivity(User $user, Ticket $ticket): bool
+    {
+        return ! $user->isEndUser() && $this->view($user, $ticket);
+    }
 }

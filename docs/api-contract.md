@@ -112,7 +112,7 @@ escalation level.
 | `GET` | `/api/v1/tickets/stats` | Dashboard counts by status and priority; scoped by role. | bearer | TM-29 |
 | `POST` | `/api/v1/tickets` | File a ticket; role `user` only. Requester is derived from the caller. | bearer (TicketPolicy, `user` role) | TM-22 |
 | `GET` | `/api/v1/tickets/{ticket}` | Return one ticket and allowed actions. | bearer (TicketPolicy) | TM-26 |
-| `GET` | `/api/v1/tickets/{ticket}/activities` | Paginated audit trail for one ticket, newest first. | bearer (TicketPolicy `view`) | TM-46 |
+| `GET` | `/api/v1/tickets/{ticket}/activities` | Paginated audit trail for one ticket, newest first. | bearer (TicketPolicy `viewActivity`) | TM-46 |
 | `POST` | `/api/v1/tickets/{ticket}/notes` | Add an internal note as a `note_added` activity. | bearer (TicketPolicy `addNote`) | TM-47 |
 | `POST` | `/api/v1/tickets/{ticket}/assign` | Assign or unassign a ticket to an active agent. | admin bearer (TicketPolicy) | TM-31 |
 | `POST` | `/api/v1/tickets/{ticket}/assignment-requests` | Ask to be assigned an unassigned ticket. | bearer, agent only (TicketPolicy) | — |
@@ -255,6 +255,7 @@ or soft-deleted id.
 includes:
 
 - `escalation_reason` — the free-text reason from the most recent escalation.
+  Omitted for a `user` account, as is `escalated_by` on every route.
 - `can` — `{update, assign, request_assignment, change_status, escalate,
   delete, add_note}`, each a boolean computed from the caller's policies
   **and** the ticket's current state (`request_assignment` is `false` once
@@ -458,8 +459,10 @@ when any check fails.
 
 ### `GET /api/v1/tickets/{ticket}/activities`
 
-Requires `Authorization: Bearer <token>`. Any active staff user may read any
-ticket's timeline (`TicketPolicy::view`). Returns `200` with the paginated
+Requires `Authorization: Bearer <token>`. Staff only (`TicketPolicy::viewActivity`):
+an admin, or an agent who may see the ticket. A `user` account gets `403`, even on
+a ticket they created -- the trail holds internal notes and escalation and
+decline reasons. Returns `200` with the paginated
 `data` / `links` / `meta` envelope. `per_page` is optional, an integer between
 1 and 100, default 20; anything else returns `422`. Ordering is
 `created_at DESC, id DESC` -- the tie-break matters because activities

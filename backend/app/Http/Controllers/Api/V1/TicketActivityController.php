@@ -14,7 +14,7 @@ class TicketActivityController extends Controller
 {
     public function __invoke(Request $request, Ticket $ticket): AnonymousResourceCollection
     {
-        $this->authorize('view', $ticket);
+        $this->authorize('viewActivity', $ticket);
         $filters = $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
             // max: is derived, not a literal -- a story that adds an event case

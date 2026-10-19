@@ -20,6 +20,7 @@ The system stops having two kinds of account and starts having three, and the ti
 3. **Ticket visibility is scoped in the query, not in the client.** A user sees the tickets they created; an agent sees tickets assigned to them plus every unassigned ticket; an admin sees all.
 4. A user may **optionally name an agent while creating** the ticket, and `GET /api/v1/agents` is the list they pick from.
 5. An agent may work only the tickets they hold — status, escalation and edits are refused on someone else's ticket.
+6. **The audit trail stays internal.** Opening `view` to the ticket's author (goal 3) must not open the timeline, internal notes or escalation reasons to them. See **Decision — `view` is not the trail's gate** and task 14.
 
 **Not in scope.** No SPA changes (**Story 57**). No assignment-request feature and no removal of `/tickets/{ticket}/claim` (**Story 58**). No change to escalation's target-selection, to the notification chain, to `status_transitions`, or to `Requester` as a table — a role-`user` account is still matched to a **`Requester` row by email**, which is what keeps the four existing notifications working untouched.
 
@@ -60,6 +61,20 @@ The system stops having two kinds of account and starts having three, and the ti
 | `POST /tickets/{id}/status` as an agent | Allowed on any ticket | Allowed only on a ticket assigned to them |
 | `POST /tickets/{id}/claim` as a role-`user` | — | `403` (`claim()` becomes agent-only) |
 | `GET /tickets/stats` `scope` | `'own'` \| `'all'` | `'assigned'` \| `'authored'` \| `'all'` |
+| `GET /tickets/{id}/activities` as a role-`user`, on their own ticket | — | **`403`** — the trail is staff-only |
+| `GET /tickets/{id}` `escalation_reason` / `escalated_by` as a role-`user` | — | **Omitted** from the payload |
+
+---
+
+## Decision — `view` is not the trail's gate
+
+**Opening `TicketPolicy::view()` to the ticket's author (task 4) silently opens everything that authorizes `view`.** The timeline endpoint (Story 39 / TM-46) does exactly that: `TicketActivityController` calls `$this->authorize('view', $ticket)` and returns every `ticket_activities` row with its full `meta`. Story 39's decision *"`view` authorizes the timeline; no new policy ability"* was sound **while `view` was true only for staff**. This story ends that precondition, so that decision is reversed here.
+
+What an author would read from their own ticket if nothing changed: agents' internal notes (`note_added` → `meta.note`), assignment-request notes and admins' decline reasons (`meta.note`, `meta.reason`), escalation and reopen reasons, staff names and ids, and the full assign/escalate history. `TicketResource` also returns `escalation_reason` and `escalated_by` on the show route. The email layer deliberately withholds all of this from a requester (TM-53 AC5, TM-56 AC5); the API must not give back what the mail withholds.
+
+**Decision: add a tenth ability, `viewActivity`, and gate the trail on it.** `view` stays "may I see this ticket"; `viewActivity` is "may I see its internal history" — `! $user->isEndUser() && $this->view($user, $ticket)`, the same shape as `addNote()`. Do not instead strip fields per role inside `TicketActivityResource`: an allowlist of customer-safe events is a product feature nobody has asked for, and a per-field filter is the kind of rule that silently rots when a story adds an event case. A `403` is the simple, testable default.
+
+**Kept visible to the author, deliberately:** `escalation_level`, `escalated_at` and the `resolution` block. The resolution note is already emailed to the requester on resolve (TM-54), and the ticket's priority — which escalation raises — is already theirs to see. Hiding only the *reason* and the *actor* matches what the mail layer reveals. If the product owner wants escalation hidden entirely, that is a one-line change in `TicketResource` and a new story, not a silent addition here.
 
 ---
 
@@ -210,6 +225,7 @@ public function changeStatus(User $user, Ticket $ticket): bool
 - `claim()` becomes `return $user->isAgent() && $ticket->assigned_to === null;` — the old `! $user->isAdmin()` would hand claim to a role-`user` account. Story 58 deletes this method; **narrow it, do not delete it here.**
 - `escalate()` becomes `return $user->isAdmin() || ($user->isAgent() && $ticket->assigned_to === $user->getKey());`. **Keep the existing docblock at 50–58 verbatim** — the "terminal ticket is a 422, not a 403" split it describes is still true and still lives in the controller.
 - `addNote()` becomes `return ! $user->isEndUser() && $this->view($user, $ticket);`. **Keep the docblock at 60–65** and append one sentence: an internal note stays internal, so an end user cannot write one even on their own ticket.
+- **New ability `viewActivity()`** — same shape as `addNote()`, written in task 14 with its reason. **Do not skip it:** without it `GET /tickets/{id}/activities` (which authorizes `view`) hands an author every internal note on their ticket.
 
 ### 5 — `GET /api/v1/agents`
 
@@ -421,19 +437,48 @@ public function endUser(): static
 - `### GET /api/v1/tickets/stats` (**156**) — `scope` is now `all` | `assigned` | `authored`.
 - `### POST /api/v1/tickets` (**187**) — new request body: no `requester` object, optional `assigned_to`.
 - New `### GET /api/v1/agents` subsection.
+- `GET /api/v1/tickets/{ticket}/activities` and `POST /api/v1/tickets/{ticket}/notes` — state **staff only** (`TicketPolicy` `viewActivity` / `addNote`); a role-`user` gets `403` even on their own ticket. Change the activities row's auth cell from `TicketPolicy view` to `TicketPolicy viewActivity`.
+- `### GET /api/v1/tickets/{ticket}` — `escalation_reason` and `escalated_by` are **omitted for a role-`user`**.
 
 **File: `docs/erd.md`** — note on `tickets.created_by`: it is now the visibility key for role-`user` accounts, and `requester_id` remains the mail key.
 
 **File: `CLAUDE.md`** — the "Roles are **Admin** and **Agent** — requesters are contact records, not logins" line in *What this is*, and the whole *Authentication and authorization* section's claim that *"The ticket list (`GET /tickets`) itself carries no role-based scoping"*. **Both are now false.** Rewrite them.
 
----
+### 14 — Keep the trail and escalation reasons staff-only
+
+**File: `backend/app/Policies/TicketPolicy.php`** — beside `addNote()`:
+
+```php
+/**
+ * The trail is internal: staff notes, assignment-request notes, decline and
+ * escalation reasons all live in it. view() admits a ticket's author, so it
+ * cannot gate this -- an author may see their ticket, not its history.
+ */
+public function viewActivity(User $user, Ticket $ticket): bool
+{
+    return ! $user->isEndUser() && $this->view($user, $ticket);
+}
+```
+
+**File: `backend/app/Http/Controllers/Api/V1/TicketActivityController.php:17`** — change `$this->authorize('view', $ticket);` to `$this->authorize('viewActivity', $ticket);`. Nothing else in the controller changes; the `event_counts` facet is behind the same gate.
+
+**File: `backend/app/Http/Resources/V1/TicketResource.php`** — two keys, both gated on the caller not being an end user:
+
+- `escalation_reason`: extend the existing condition to `$request->routeIs('tickets.show') && ! $request->user()->isEndUser()`.
+- `escalated_by`: wrap the existing `whenLoaded(...)` as `$this->when(! $request->user()->isEndUser(), fn () => $this->whenLoaded('escalatedBy', ...))`. A `MissingValue` returned from the `when()` closure is stripped by the resource, but **assert the key is absent** (test 28) rather than trusting that.
+
+**File: `backend/tests/Feature/Authorization/RouteAuthorizationTest.php`** — `tickets.activities` and `tickets.notes` stay `'staff'` in `ACCESS`, but that manifest never exercises a role-`user` caller, which is how this slipped through. Do not add a manifest level; the dedicated tests below carry it.
+
+The SPA must also stop requesting the timeline for an end user — that is **Story 57's** job; link it there, do not patch the SPA here.
+
 
 ## Edge Cases & Failure Modes
 
 - **An agent escalates their own ticket and loses it.** `escalationTarget()` (`TicketController.php:200–221`) reassigns to the least-loaded admin, so the `200` response body is the last time that agent can read the ticket. Expected. The response is still returned in full — `escalate()` reloads and serialises before the policy is consulted again.
 - **An agent is unassigned and the ticket vanishes from their queue.** Same mechanism, via `POST /assign` with `assigned_to: null`. Expected, and it is what makes Story 58's request flow necessary.
 - **A ticket that exists but is invisible returns `403`, not `404`.** Route-model binding resolves first, then `view()` denies. This matches the existing precedent asserted in `RouteAuthorizationTest::test_unknown_id_agent_forbidden_admin_not_found` (**129–135**), where an agent gets `403` and an admin `404` for the same id. **It does leak existence.** Accepted for consistency; changing it is a repo-wide decision, not this story's.
-- **`GET /tickets/{id}/activities` and `POST /tickets/{id}/notes` are already covered.** `TicketActivityController:17` authorizes `view`, and `StoreTicketNoteRequest` gates on `addNote`. Both tighten for free — **verify, do not re-add checks.**
+- **`POST /tickets/{id}/notes` is covered; `GET /tickets/{id}/activities` is NOT.** `StoreTicketNoteRequest` gates on `addNote`, which task 4 makes staff-only. But `TicketActivityController:17` authorizes `view`, and task 4 opens `view` to the ticket's author — so the timeline would leak every internal note, assignment-request note, decline reason and escalation reason to them. An earlier revision of this plan said both "tighten for free"; that was wrong for the read side. Task 14 adds `viewActivity`; tests 26–30 pin it.
+- **An end user's `403` on the timeline leaks nothing new.** They already receive `403` for any ticket they do not own; on their own ticket they learn only that a history exists, which the ticket's own timestamps already imply.
 - **A user created before this story has `role = 'agent'` and keeps it.** The migration changes no rows. Turning existing contacts into logins is an operator action, not a migration.
 - **Two accounts, one email, one `Requester`.** `users.email` is unique (`create_users_table.php:19`) so this cannot happen for accounts, but a `Requester` may already exist for that email from a staff-filed ticket. `firstOrCreate` reuses it and **does not overwrite its `name`** — the historical contact name wins over the account name. Deliberate: the requester row is the mail identity.
 - **`assigned_to` names an agent who is deactivated between validation and insert.** The row still writes. Same window `AssignTicketRequest` has had since Story 26; not newly introduced and not fixed here.
@@ -476,12 +521,22 @@ public function endUser(): static
 
 ### Backend — `tests/Feature/Policies/TicketPolicyTest.php` (new)
 
-19. A table-driven pass over `view`/`update`/`changeStatus`/`escalate`/`addNote`/`claim`/`assign`/`delete` × {admin, holding agent, other agent, author end user, other end user}. This is the story's real contract; write it before the controllers.
+19. A table-driven pass over `view`/`viewActivity`/`update`/`changeStatus`/`escalate`/`addNote`/`claim`/`assign`/`delete` × {admin, holding agent, other agent, author end user, other end user}. This is the story's real contract; write it before the controllers. **`viewActivity` must be `false` for the author end user** — that cell is the regression test for the leak in task 14.
 
 ### Backend — `tests/Feature/Tickets/AgentListTest.php` (new)
 
 20. `GET /agents` returns active agents only, ordered by name, with **exactly** the keys `id` and `name` — assert the absence of `email` and `role`.
 21. Reachable by all three roles; `401` unauthenticated.
+
+### Backend — `tests/Feature/Tickets/TicketTrailIsInternalTest.php` (new; `RefreshDatabase`, seed only what the factories need)
+
+Arrange once: a ticket created by an end user, assigned to an agent, with an agent note (`POST /notes`), an escalation carrying a reason, and a declined assignment request carrying a reason — so the trail genuinely contains the sensitive rows.
+
+26. The author end user `GET /tickets/{id}/activities` → **`403`**, and the response body contains none of the note text, escalation reason or decline reason. Assert the body, not just the status.
+27. The holding agent and an admin `GET …/activities` → `200` and the note row is present. Proves the gate did not break staff.
+28. The author end user `GET /tickets/{id}` → `200` and the payload **has no `escalation_reason` key and no `escalated_by` key** (`assertJsonMissingPath`); the same request as an admin has both.
+29. The author end user `POST /tickets/{id}/notes` → `403`; no `note_added` row exists afterwards.
+30. A *different* end user `GET …/activities` on that ticket → `403` (outside `view`), and the activities `?events[]=note_added` filter does not change either result for the author.
 
 ### Backend — modified elsewhere
 
@@ -504,7 +559,7 @@ public function endUser(): static
 
 1. **Services up:** `docker compose up -d --wait`, then `docker compose ps` shows `tm-mysql-test` healthy.
 2. **Backend migrates both ways:** from `backend/` — `php artisan migrate`, then `php artisan migrate:fresh --seed`, and confirm `SHOW CREATE TABLE users` gives the identical `role` definition after each.
-3. **Backend tests:** `composer test`. Then the focused pass: `php artisan test --filter='TicketVisibilityTest|TicketPolicyTest|CreateTicketTest|AgentListTest|RouteAuthorizationTest|UserRoleTest|UsersTableSchemaTest'`.
+3. **Backend tests:** `composer test`. Then the focused pass: `php artisan test --filter='TicketVisibilityTest|TicketPolicyTest|TicketTrailIsInternalTest|CreateTicketTest|AgentListTest|RouteAuthorizationTest|UserRoleTest|UsersTableSchemaTest'`. **Prove test 26 earns its place:** change task 14's controller line back to `authorize('view', …)`, run `--filter=TicketTrailIsInternalTest`, and confirm it fails with a `200`. Restore.
 4. **Formatting:** `./vendor/bin/pint --test` from `backend/`.
 5. **Regression:** `php artisan test --filter='Notifications|Activity|Admin'` — the notification chain and the audit trail must be untouched.
 6. **By hand:** `php artisan migrate:fresh --seed && php artisan db:seed --class=DemoSeeder`, then with `php artisan serve` running, log in as a demo end user and confirm `GET /api/v1/tickets` returns only their own.
@@ -524,6 +579,7 @@ public function endUser(): static
 - [ ] `GET /api/v1/agents` returns `id` and `name` for active agents only, to any authenticated role, and carries no email.
 - [ ] `GET /api/v1/tickets/stats` reports `scope` as `all` | `assigned` | `authored`, scoped consistently with the list.
 - [ ] Moving the last active admin to `role=user` is refused.
+- [ ] `TicketPolicy::viewActivity` exists, gates `GET /tickets/{id}/activities`, and is `false` for a ticket's author end user. An end user gets `403` on the timeline and on `POST /notes`, and `GET /tickets/{id}` omits `escalation_reason` and `escalated_by` for them.
 - [ ] `docs/api-contract.md`, `docs/erd.md` and `CLAUDE.md` describe three roles; `ApiContractCoverageTest` is green.
 - [ ] `composer test` and `./vendor/bin/pint --test` pass.
 
