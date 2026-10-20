@@ -647,13 +647,49 @@ Add both to the returned object, and add `computed` to the `vue` import on **lin
 
 `activeCategories` is what makes TM-17's fifth criterion true: a deactivated category disappears from this form's dropdown while `categoryBadge()` still renders it on tickets that already carry it. **The form must read `activeCategories`, never `categories`.**
 
+### 11a — A `loading` flag, so the form can tell "in flight" from "empty" *(revised after the 2026-10-20 prod-review, finding [HIGH])*
+
+**File: `frontend/src/stores/masterData.ts`**
+
+Task 11's "change nothing else" no longer holds for one thing. The first version of the form tied its spinner to `categories.length === 0`, which is true while the request is in flight, after it fails, **and** when the server legitimately returns no categories. A failed `/categories` (the client times out at 10 s) or an empty install therefore left "Loading master data…" spinning forever with no way out except a manual reload.
+
+Add one ref and set it around `refresh()`. Leave `ensureLoaded()`'s single-flight promise (`let loading`) exactly as it is — **name the new ref `isLoading`** so it does not shadow that variable.
+
+```ts
+const isLoading = ref(false)
+
+async function refresh(): Promise<void> {
+  isLoading.value = true
+  try {
+    // ...the existing Promise.allSettled body, unchanged
+  } finally {
+    isLoading.value = false
+  }
+}
+```
+
+Add `isLoading` to the returned object. `clear()` does not touch it. Because the **Retry** button calls `refresh()` directly (not `ensureLoaded()`), the flag has to live in `refresh()` so both paths drive it.
+
 ### 12 — The form
 
 **Create file: `frontend/src/views/NewTicketView.vue`** — copy `LoginView.vue`'s structure: `<script setup lang="ts">`, refs, one `submit()`, `data-testid` on every control, scoped styles.
 
 Behaviour, all of it criterion 6:
 
-- `onMounted(() => void masterData.ensureLoaded())`, and render a loading line while `masterData.categories.length === 0`. The guard already prefetches (`guards.ts:36`); this covers a direct page load that races it.
+- `onMounted`, `await masterData.ensureLoaded()` and then set a local `ready` ref to `true`. The guard already prefetches (`guards.ts:36`); this covers a direct page load that races it. *(Revised after the 2026-10-20 prod-review, finding [HIGH].)*
+- **Four mutually exclusive states for the master-data block — never derive "loading" from an empty list.** `formReady` means `masterData.activeCategories.length > 0 && masterData.priorities.length > 0`.
+
+  | State | `data-testid` | Condition |
+  |---|---|---|
+  | Loading | `new-ticket-loading` | `!ready \|\| masterData.isLoading` |
+  | Load failed | `new-ticket-master-error` | `ready && !masterData.isLoading && masterData.error && !formReady` |
+  | Nothing to pick | `new-ticket-empty` | `ready && !masterData.isLoading && !masterData.error && !formReady` |
+  | Form | `new-ticket-form` | `ready && !masterData.isLoading && formReady` |
+
+  - The **load-failed** state shows `masterData.error` and a **Retry** button (`data-testid="new-ticket-retry"`) that calls `masterData.refresh()`. While the retry is in flight `isLoading` is true, so the block returns to the loading state and then settles into the form or back into the error — never a permanent spinner.
+  - The **nothing-to-pick** state means the request succeeded but no *active* category exists (or no priority). Say so in plain words ("No active categories are available. Ask an admin to add one.") — it is an empty state, not an error, and there is nothing to retry.
+  - The form is **not rendered** in either of those states, so a user can never type a whole ticket into a form that cannot be submitted. If the load partially succeeded (categories arrived, priorities did not) `formReady` is false and the failed state shows, with Retry.
+  - The existing `new-ticket-error` banner stays for **submit** errors only. It is no longer also the master-data error display.
 - Fields: `requester.name`, `requester.email`, `requester.phone`, `requester.company`, `subject`, `description`, `category_id` (a `<select>` over **`masterData.activeCategories`**), `priority_id` (a `<select>` over `masterData.priorities`, preselected from `masterData.defaultPriority`).
 - **Client-side validation before the request**, into a local `errors` record: `requester.name`, `requester.email`, `subject`, `description` and `category_id` all required; email matched against a simple `/.+@.+\..+/`; `subject` at most 255 characters and `description` at most 16,000, mirroring the server's caps so the common case never round-trips.
 - **`submit()` opens with `if (submitting.value) return`** — the Enter-key path does not go through the button.
@@ -661,7 +697,7 @@ Behaviour, all of it criterion 6:
 - Server `422`s land in the same `errors` record via `validationErrors(e)` from `api/errors.ts`; anything else becomes a message via `errorMessage(e)`. Nested keys arrive as `requester.email`, so index the record by the dotted key rather than flattening it.
 - On success, hide the form and show `Ticket <reference> created.` with a **Create another** button that clears every field and shows the form again.
 
-Required test ids: `new-ticket-form`, `new-ticket-requester-name`, `new-ticket-requester-email`, `new-ticket-requester-phone`, `new-ticket-requester-company`, `new-ticket-subject`, `new-ticket-description`, `new-ticket-category`, `new-ticket-priority`, `new-ticket-submit`, `new-ticket-error`, `new-ticket-error-<field>`, `new-ticket-created`, `new-ticket-another`.
+Required test ids: `new-ticket-loading`, `new-ticket-master-error`, `new-ticket-retry`, `new-ticket-empty`, `new-ticket-form`, `new-ticket-requester-name`, `new-ticket-requester-email`, `new-ticket-requester-phone`, `new-ticket-requester-company`, `new-ticket-subject`, `new-ticket-description`, `new-ticket-category`, `new-ticket-priority`, `new-ticket-submit`, `new-ticket-error`, `new-ticket-error-<field>`, `new-ticket-created`, `new-ticket-another`.
 
 **File: `frontend/src/router/index.ts`** — import the view alongside the others (**4–9**) and add the route before the catch-all (**48**):
 
@@ -705,9 +741,11 @@ Required test ids: `new-ticket-form`, `new-ticket-requester-name`, `new-ticket-r
 
 - **The form is submitted twice by pressing Enter twice quickly.** One request. `submit()` returns immediately on the second call because `submitting` is still true (task 12) — the `:disabled` attribute alone does not cover the Enter path, which is why both guards exist.
 
-- **The form is opened by direct URL before the guard's prefetch resolves.** `onMounted` awaits `ensureLoaded()` and the selects render empty until it settles; the loading line covers the gap. `ensureLoaded()` is single-flight, so this does not double-fetch.
+- **The form is opened by direct URL before the guard's prefetch resolves.** `onMounted` awaits `ensureLoaded()`; until `ready` is set the loading state shows, and the form is not rendered. `ensureLoaded()` is single-flight, so this does not double-fetch.
 
-- **The master-data request failed and the category list is empty.** `masterData.error` is set; the form shows it and the submit button stays disabled, because `category_id` is required and there is nothing to pick.
+- **The master-data request failed or timed out and the category list is empty.** `masterData.error` is set; the form is **hidden** and the load-failed state shows the error with a **Retry** button that calls `masterData.refresh()`. The spinner is gated on `isLoading`, **not** on an empty list, so it stops the moment the request settles. *(Revised after the 2026-10-20 prod-review, finding [HIGH]: the first version kept the spinner up forever and offered no retry.)*
+
+- **The master-data request succeeded but there is no active category (or no priority).** No error, nothing to retry: the nothing-to-pick state explains that an admin has to add a category, and the form is not rendered.
 
 - **A category deactivated after the form was opened.** The client offers it (stale list) and the server answers `422` on `category_id`. Correct: the server is the authority, and the message tells the agent to reload.
 
@@ -757,8 +795,8 @@ Backend from `backend/`, frontend from `frontend/`. Backend feature tests use `R
 ### Frontend
 
 9. **Create `frontend/src/api/tickets.spec.ts`** — 2 tests using the `client.defaults.adapter` capture from `api/auth.spec.ts:9–30`: `createTicket` POSTs to `/tickets` with the nested `requester` object intact, and unwraps `{ data }`.
-10. **Create `frontend/src/stores/masterData.spec.ts`** — 3 tests, restricted to task 11: `activeCategories` excludes inactive rows while `categories` keeps them; `defaultPriority` returns the `is_default` row; `defaultPriority` is `null` when none is flagged. **The rest of this store is TM-19's untested surface and stays that way here.**
-11. **Create `frontend/src/views/NewTicketView.spec.ts`** — 7 tests, mounting with `createPinia()` and `vi.mock('../api/tickets')`, following `views/HealthView.spec.ts`.
+10. **Create `frontend/src/stores/masterData.spec.ts`** — 3 tests, restricted to task 11: `activeCategories` excludes inactive rows while `categories` keeps them; `defaultPriority` returns the `is_default` row; `defaultPriority` is `null` when none is flagged. **The rest of this store is TM-19's untested surface and stays that way here.** *(Revised: +2 tests for task 11a — `isLoading` is true while `refresh()` is in flight and false after it resolves; `isLoading` is reset to false when a list request rejects. **5 tests**, and "the rest of the store stays untested" still applies.)*
+11. **Create `frontend/src/views/NewTicketView.spec.ts`** — 7 tests *(revised: 10 — see the three master-data-state tests below)*, mounting with `createPinia()` and `vi.mock('../api/tickets')`, following `views/HealthView.spec.ts`.
    - `renders only active categories in the dropdown`.
    - `preselects the default priority`.
    - `blocks submit and shows field errors when required fields are empty` — no request is made.
@@ -766,6 +804,9 @@ Backend from `backend/`, frontend from `frontend/`. Backend feature tests use `R
    - `disables the button while in flight`.
    - `cannot be double-submitted` — call `submit()` twice without awaiting between; `createTicket` is called **once**. Assert this by invoking the handler directly rather than clicking, so the disabled attribute is not what makes it pass.
    - `shows the reference on success and clears the form on Create another`.
+   - `shows the loading state only while master data is in flight` — with `isLoading` true, `new-ticket-loading` is present and `new-ticket-form` is not. *(Added after the 2026-10-20 prod-review, finding [HIGH].)*
+   - `shows the error and a working Retry when master data fails to load` — seed an empty store with `error` set and `isLoading` false: `new-ticket-master-error` is present, **`new-ticket-loading` is absent** (this is the regression), and `new-ticket-form` is absent. Clicking `new-ticket-retry` calls `masterData.refresh()` once, and once the store is seeded with categories and priorities the form appears.
+   - `shows an empty state, not an error, when no active category exists` — `categories` holds only `is_active: false` rows, `error` is null: `new-ticket-empty` is present, no retry button, no form.
 12. **Create `frontend/src/stores/tickets.spec.ts`** — 2 tests: `creating` is true during the call and false after; a rejected create rethrows and still resets `creating`.
 
 Expected totals: **backend 101 → 127 tests** (26 new; the two red ones stay red), **frontend 24 → roughly 38 tests across 10 files**.
@@ -804,6 +845,7 @@ Expected totals: **backend 101 → 127 tests** (26 new; the two red ones stay re
 - [ ] `category_id` must name an existing, **active**, non-soft-deleted category.
 - [ ] `tickets.store` is classified `staff-write` in `RouteAuthorizationTest`, an agent is never `403`, an unauthenticated caller is `401`, and `test_agent_reaches_staff_routes` is **unmodified**.
 - [ ] `masterData` exposes `activeCategories` and `defaultPriority`; the form's category dropdown reads `activeCategories` and its priority dropdown starts on the default. Neither dropdown issues its own request.
+- [ ] The form never shows a permanent spinner: loading is gated on `masterData.isLoading`, a failed master-data load shows the error with a **Retry** button, an empty active-category list shows an empty state, and the form is hidden in both of those states. *(Added after the 2026-10-20 prod-review, finding [HIGH].)*
 - [ ] The form validates required fields, the email format and both length caps **before** submitting; the button is disabled while in flight; and `submit()` returns early when already submitting, so the Enter key cannot double-submit.
 - [ ] On success the form shows the created reference and *Create another* clears every field. (**TM-26** replaces this with a redirect to the detail page.)
 - [ ] `composer test` is **127 tests, 125 passing** — the only failures being TM-14's `PasswordThrottleTest` and TM-21's `TicketReferenceTest`; `npm test` is green across 10 files; `./vendor/bin/pint --test`, `npx vue-tsc -b`, `npm run lint` and `npm run format:check` are clean.

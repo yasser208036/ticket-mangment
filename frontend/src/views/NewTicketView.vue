@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { errorMessage, validationErrors } from '../api/errors'
 import type { CreateTicketPayload } from '../api/tickets'
@@ -14,6 +14,21 @@ const submitting = ref(false)
 const message = ref('')
 const agents = ref<AgentOption[]>([])
 const assignedTo = ref<number>(0)
+// False until the first ensureLoaded() settles, so the empty store on first
+// paint reads as "loading", never as "nothing to pick".
+const ready = ref(false)
+const showLoading = computed(() => !ready.value || masterData.isLoading)
+const formReady = computed(
+  () =>
+    masterData.activeCategories.length > 0 && masterData.priorities.length > 0,
+)
+const showMasterError = computed(
+  () => !showLoading.value && !!masterData.error && !formReady.value,
+)
+const showEmpty = computed(
+  () => !showLoading.value && !masterData.error && !formReady.value,
+)
+const showForm = computed(() => !showLoading.value && formReady.value)
 
 const form = reactive<CreateTicketPayload>({
   subject: '',
@@ -60,7 +75,9 @@ async function submit(): Promise<void> {
 }
 
 onMounted(() => {
-  void masterData.ensureLoaded()
+  void masterData.ensureLoaded().finally(() => {
+    ready.value = true
+  })
   // Optional -- a failure here must not block filing the ticket, it just
   // leaves the picker showing only "Let an administrator assign this".
   listAgents()
@@ -110,7 +127,8 @@ onMounted(() => {
 
     <!-- Loading master data -->
     <div
-      v-if="masterData.categories.length === 0"
+      v-if="showLoading"
+      data-testid="new-ticket-loading"
       class="flex items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-8 shadow-sm"
     >
       <div class="flex items-center gap-3 text-sm font-medium text-slate-500">
@@ -137,13 +155,31 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Error Banner -->
+    <!-- Master data failed to load -->
     <div
-      v-if="masterData.error"
-      data-testid="new-ticket-error"
-      class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 shadow-sm"
+      v-if="showMasterError"
+      data-testid="new-ticket-master-error"
+      role="alert"
+      class="flex items-center justify-between gap-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 shadow-sm"
     >
-      {{ masterData.error }}
+      <span>{{ masterData.error }}</span>
+      <button
+        type="button"
+        data-testid="new-ticket-retry"
+        class="rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 transition-all hover:bg-rose-100"
+        @click="masterData.refresh()"
+      >
+        Retry
+      </button>
+    </div>
+
+    <!-- Loaded, but no active category or priority to pick -->
+    <div
+      v-if="showEmpty"
+      data-testid="new-ticket-empty"
+      class="rounded-2xl border border-slate-200/80 bg-white p-8 text-center text-sm text-slate-500 shadow-sm"
+    >
+      No active categories are available. Ask an admin to add one.
     </div>
 
     <div
@@ -156,6 +192,7 @@ onMounted(() => {
 
     <!-- Ticket Form -->
     <form
+      v-if="showForm"
       data-testid="new-ticket-form"
       @submit.prevent="submit"
       class="space-y-6"

@@ -9,22 +9,29 @@ export const useMasterDataStore = defineStore('masterData', () => {
   const priorities = ref<Priority[]>([])
   const statuses = ref<Status[]>([])
   const error = ref<string | null>(null)
+  const isLoading = ref(false)
   let loading: Promise<void> | null = null
   async function refresh(): Promise<void> {
-    const results = await Promise.allSettled([
-      listCategories(),
-      listPriorities(),
-      listStatuses(),
-    ])
-    const [categoryResult, priorityResult, statusResult] = results
-    if (categoryResult.status === 'fulfilled')
-      categories.value = categoryResult.value
-    if (priorityResult.status === 'fulfilled')
-      priorities.value = priorityResult.value
-    if (statusResult.status === 'fulfilled') statuses.value = statusResult.value
-    error.value = results.some((r) => r.status === 'rejected')
-      ? 'Unable to load master data.'
-      : null
+    isLoading.value = true
+    try {
+      const results = await Promise.allSettled([
+        listCategories(),
+        listPriorities(),
+        listStatuses(),
+      ])
+      const [categoryResult, priorityResult, statusResult] = results
+      if (categoryResult.status === 'fulfilled')
+        categories.value = categoryResult.value
+      if (priorityResult.status === 'fulfilled')
+        priorities.value = priorityResult.value
+      if (statusResult.status === 'fulfilled')
+        statuses.value = statusResult.value
+      error.value = results.some((r) => r.status === 'rejected')
+        ? 'Unable to load master data.'
+        : null
+    } finally {
+      isLoading.value = false
+    }
   }
   async function ensureLoaded(): Promise<void> {
     if (
@@ -72,6 +79,7 @@ export const useMasterDataStore = defineStore('masterData', () => {
     priorities,
     statuses,
     error,
+    isLoading,
     refresh,
     ensureLoaded,
     clear,

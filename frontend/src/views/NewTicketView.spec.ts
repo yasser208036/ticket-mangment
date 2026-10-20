@@ -90,6 +90,74 @@ describe('NewTicketView', () => {
     vi.mocked(listAgents).mockResolvedValue([{ id: 9, name: 'Alan Turing' }])
   })
 
+  it('shows the loading state, and no form, only while master data is in flight', async () => {
+    const { wrapper } = await mountForm()
+    const masterData = useMasterDataStore()
+    expect(wrapper.find('[data-testid="new-ticket-loading"]').exists()).toBe(
+      false,
+    )
+
+    masterData.isLoading = true
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="new-ticket-loading"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.find('[data-testid="new-ticket-form"]').exists()).toBe(false)
+  })
+
+  it('shows the error and a working Retry, never a permanent spinner, when master data fails to load', async () => {
+    const { wrapper } = await mountForm()
+    const masterData = useMasterDataStore()
+    masterData.categories = []
+    masterData.error = 'Unable to load master data.'
+    const refresh = vi.spyOn(masterData, 'refresh').mockImplementation(() => {
+      masterData.categories = [
+        {
+          id: 3,
+          name: 'Hardware',
+          slug: 'hardware',
+          color: '#111',
+          is_active: true,
+          sort_order: 1,
+        } as never,
+      ]
+      masterData.error = null
+      return Promise.resolve()
+    })
+    await flushPromises()
+
+    expect(
+      wrapper.find('[data-testid="new-ticket-master-error"]').exists(),
+    ).toBe(true)
+    expect(wrapper.find('[data-testid="new-ticket-loading"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-testid="new-ticket-form"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="new-ticket-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="new-ticket-form"]').exists()).toBe(true)
+  })
+
+  it('shows an empty state, not an error, when no active category exists', async () => {
+    const { wrapper } = await mountForm()
+    const masterData = useMasterDataStore()
+    masterData.categories = masterData.categories.map((category) => ({
+      ...category,
+      is_active: false,
+    }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="new-ticket-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="new-ticket-retry"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-testid="new-ticket-form"]').exists()).toBe(false)
+  })
+
   it('renders no requester fields', async () => {
     const { wrapper } = await mountForm()
     expect(
