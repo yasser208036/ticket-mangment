@@ -206,6 +206,41 @@ describe('TicketDetailView with every permission false', () => {
   })
 })
 
+describe('TicketDetailView requester and assignment cards', () => {
+  beforeEach(() => {
+    vi.mocked(getTicket).mockReset()
+    vi.mocked(getTicketStats).mockReset()
+    vi.mocked(listTicketActivities).mockReset()
+  })
+
+  it('shows the requester email when the requester has no company', async () => {
+    const wrapper = await mountDetail({
+      ...baseTicket,
+      requester: { ...baseTicket.requester, company: null },
+    })
+
+    expect(wrapper.get('[data-testid="ticket-requester-email"]').text()).toBe(
+      'req@example.test',
+    )
+    expect(
+      wrapper.find('[data-testid="ticket-requester-company"]').exists(),
+    ).toBe(false)
+  })
+
+  it('prints the assignee and creator labels once', async () => {
+    const wrapper = await mountDetail({
+      ...baseTicket,
+      assignee: { id: 7, name: 'Jane' },
+      creator: { id: 8, name: 'Bob' },
+    })
+
+    expect(wrapper.text().match(/Assignee:/g)).toHaveLength(1)
+    expect(wrapper.text().match(/Creator:/g)).toHaveLength(1)
+    expect(wrapper.text()).toContain('Jane')
+    expect(wrapper.text()).toContain('Bob')
+  })
+})
+
 describe('TicketDetailView escalation', () => {
   beforeEach(() => {
     vi.mocked(getTicket).mockReset()

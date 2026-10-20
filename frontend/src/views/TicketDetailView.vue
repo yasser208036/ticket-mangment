@@ -479,21 +479,28 @@ async function onDeleted(): Promise<void> {
                   {{ store.current.requester.name }}
                 </p>
                 <p
-                  v-if="store.current.requester.company"
+                  data-testid="ticket-requester-email"
                   class="truncate text-xs text-slate-500"
                 >
                   {{ store.current.requester.email }}
                 </p>
+                <p
+                  v-if="store.current.requester.company"
+                  data-testid="ticket-requester-company"
+                  class="truncate text-xs text-slate-500"
+                >
+                  {{ store.current.requester.company }}
+                </p>
               </div>
             </div>
 
-            <!-- <div
+            <div
               v-if="store.current.requester.phone"
               class="border-t border-slate-100 pt-3 text-xs text-slate-600"
             >
               <span class="font-medium text-slate-400">Phone: </span
               >{{ store.current.requester.phone }}
-            </div> -->
+            </div>
           </div>
 
           <!-- Assignment & Creator Card -->
@@ -510,14 +517,14 @@ async function onDeleted(): Promise<void> {
               <div class="flex justify-between py-1 border-b border-slate-100">
                 <span class="text-slate-500 font-medium">Assignee:</span>
                 <span class="font-semibold text-slate-800">
-                  Assignee: {{ store.current.assignee?.name || 'Unassigned' }}
+                  {{ store.current.assignee?.name || 'Unassigned' }}
                 </span>
               </div>
 
               <div class="flex justify-between py-1 border-b border-slate-100">
                 <span class="text-slate-500 font-medium">Creator:</span>
                 <span class="font-semibold text-slate-800">
-                  Creator: {{ store.current.creator?.name }}
+                  {{ store.current.creator?.name }}
                 </span>
               </div>
 

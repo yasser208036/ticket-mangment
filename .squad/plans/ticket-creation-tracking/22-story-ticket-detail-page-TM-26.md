@@ -407,6 +407,8 @@ The not-found state reads **"Ticket not found. It may have been deleted."** with
 Content requirements — AC2 is "all ticket fields", so be exhaustive:
 
 - **Always:** `reference` (as the heading), `subject`, `description`, requester (name, email, phone, company), `CategoryBadge` for category, `ColorBadge` for priority and status, assignee (`?? 'Unassigned'`), creator, `created_at` and `updated_at` with `relativeAge()` and a `:title` carrying the ISO string.
+- **The requester card shows each field on its own condition** *(revised after the 2026-10-20 prod-review, finding [MEDIUM])*. `email` is required on a requester, so it renders **unconditionally** — never inside a `v-if` on `company`, which hid the only way to contact a requester who has no company. `company` and `phone` each get their own `v-if` on their own value. Never leave a commented-out block (the old phone block) in the template; delete it or make it real.
+- **The assignment card prints each label once.** The template already renders a `<span>` label ("Assignee:", "Creator:"), so the value span holds the **value only** — `{{ store.current.assignee?.name ?? 'Unassigned' }}` and `{{ store.current.creator?.name }}`. The first version also put "Assignee: " / "Creator: " in front of the value, which rendered "Assignee: Assignee: Jane". *(Same finding.)*
 - **Only when set (`v-if`):** `escalation_level > 0` with `escalated_at`, `escalated_by.name` and `escalation_reason` in a block with `data-testid="ticket-escalation"`; and each of `first_responded_at`, `resolved_at`, `closed_at` with test ids `ticket-first-responded`, `ticket-resolved`, `ticket-closed`. **AC2 says "when set"** — an unescalated ticket must not render an empty escalation panel.
 - `<TicketActionToolbar :ticket="store.current" />`.
 
@@ -468,6 +470,8 @@ Same policy as Stories 19–21: **format only what you touch.** This clears `New
 - **`current` is cleared before each load**, so the previous ticket never flashes under the new URL.
 - **A reload on `/tickets/9`** works because the route is registered statically and the store loads on mount — AC5 needs no server-side change (the SPA is served by Vite in dev; production history-fallback is TM-6's concern, already handled).
 - **`escalation_reason` can be long free text.** It is show-only and rendered in a block that wraps; it is not in the list payload.
+- **A requester with no company.** The email still renders; only the company line is omitted. *(Added after the 2026-10-20 prod-review, finding [MEDIUM].)*
+- **An unassigned ticket.** The assignment card reads "Assignee:" once, followed by "Unassigned" — never "Assignee: Unassigned" repeated, and never an empty value.
 - **An agent must not see any staff email.** `escalated_by`, `assignee` and `creator` are all `['id','name']`; nesting `UserResource` would leak `email`. Asserted for `escalated_by` in backend test 8.
 
 ---
@@ -513,6 +517,7 @@ Uses Story 19's `TicketFactory` and `RequesterFactory`. `tests/Feature/Tickets/`
 22. **`frontend/src/stores/tickets.spec.ts`** (extend) — `loadTicket` populates `current` and clears `detailLoading`; a 404 sets `detailNotFound` **and leaves `detailError` null**; a 500 sets `detailError` **and leaves `detailNotFound` false**; `current` is cleared at the start of a load; the list state and `creating` are untouched by a detail load. **5 tests.**
 23. **`frontend/src/components/TicketActionToolbar.spec.ts`** (new) — all four buttons render for all-true `can` and every one is `disabled`; `action-assign` is absent when `can.assign` is false; `action-escalate` is absent when `can.escalate` is false; no `action-delete` exists. **4 tests.**
 24. **`frontend/src/views/TicketDetailView.spec.ts`** (new) — the four states are mutually exclusive (loading shows no content; `detailNotFound` renders `ticket-not-found` and **not** `ticket-error`; a 500 renders `ticket-error` and not `ticket-not-found`); content renders reference, subject, description, requester email and the three badges; the escalation panel is **absent** on an unescalated ticket and **present** with reason and escalator when set; changing `route.params.id` triggers a reload; **`router.resolve('/tickets/new').name` is `'new-ticket'`, not `'ticket-detail'`** (the route-order guard, via `createAppRouter(createMemoryHistory())`). **5 tests.**
+   - *Added after the 2026-10-20 prod-review, finding [MEDIUM]:* `shows the requester email when the requester has no company` (company `null`, email still in the DOM, no company line); and `prints the assignee and creator labels once` (the text "Assignee:" and "Creator:" each occur exactly once in the assignment card, and the value spans contain the bare name or `Unassigned`). **7 tests.**
 
 ### Frontend — modified
 
@@ -559,6 +564,7 @@ Uses Story 19's `TicketFactory` and `RequesterFactory`. `tests/Feature/Tickets/`
 - [ ] A non-existent **and** a soft-deleted ticket both return `404`, for agents and admins alike — with no `->withTrashed()` on the route.
 - [ ] `tickets.show` is classified `staff` in `ACCESS`, `routesFor()` resolves `{ticket}`, and `RouteAuthorizationTest` is fully green.
 - [ ] The SPA detail page renders every ticket field, and the escalation panel and each lifecycle timestamp appear **only when set**.
+- [ ] The requester's email is always shown (with or without a company), the assignment card prints "Assignee:" and "Creator:" once each, and the template carries no commented-out blocks. *(Added after the 2026-10-20 prod-review, finding [MEDIUM].)*
 - [ ] The toolbar shows Edit / Assign / Change status / Escalate gated by `can`, every button `disabled` with a `title` naming its owning story, and **no delete button**.
 - [ ] Loading, not-found, error and content are mutually exclusive; a 404 renders the not-found state and not the error state.
 - [ ] `/tickets/:id` is reachable by URL, survives a reload, and reloads when the id changes without a remount.
